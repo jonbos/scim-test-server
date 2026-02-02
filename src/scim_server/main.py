@@ -5,9 +5,9 @@ from typing import Any
 from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
-from config import allows_patch_for_groups, allows_put_for_groups, get_config
-from models import GroupPatchV1, GroupPatchV2, GroupRequest, SeedData, UserRequest
-from storage import storage
+from scim_server.config import allows_patch_for_groups, allows_put_for_groups, get_config
+from scim_server.models import GroupPatchV1, GroupPatchV2, GroupRequest, SeedData, UserRequest
+from scim_server.storage import storage
 
 app = FastAPI(title="SCIM Server", description="SCIM 1.1 and 2.0 compliant server")
 
@@ -465,7 +465,10 @@ async def delete_group_v2(group_id: str):
     return None
 
 
-if __name__ == "__main__":
+def main():
     import uvicorn
-
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+
+if __name__ == "__main__":
+    main()

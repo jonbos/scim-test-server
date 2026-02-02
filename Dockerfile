@@ -2,9 +2,15 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-RUN pip install --no-cache-dir fastapi uvicorn pydantic
+# Install dependencies
+COPY pyproject.toml .
+RUN pip install --no-cache-dir .
 
-COPY main.py storage.py models.py config.py ./
+# Copy source
+COPY src/ src/
+
+# Install the package
+RUN pip install --no-cache-dir -e .
 
 # SCIM configuration
 # Preset: permissive (default), pingdirectory, put_only
@@ -15,4 +21,4 @@ ENV SCIM_PRESET=permissive
 
 EXPOSE 8000
 
-CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "scim_server.main:app", "--host", "0.0.0.0", "--port", "8000"]
