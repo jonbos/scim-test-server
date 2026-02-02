@@ -1,0 +1,58 @@
+{
+  "users": [
+    {
+      "userName": "jsmith",
+      "displayName": "John Smith",
+      "name": {
+        "givenName": "John",
+        "familyName": "Smith",
+        "formatted": "John Smith"
+      },
+      "emails": [
+        {"value": "jsmith@example.com", "type": "work", "primary": true}
+      ],
+      "active": true,
+      "externalId": "emp-001"
+    },
+    {
+      "userName": "ajonson",
+      "displayName": "Alice Johnson",
+      "name": {
+        "givenName": "Alice",
+        "familyName": "Johnson",
+        "formatted": "Alice Johnson"
+      },
+      "emails": [
+        {"value": "ajonson@example.com", "type": "work", "primary": true}
+      ],
+      "active": true,
+      "externalId": "emp-002"
+    },
+    {
+      "userName": "bwilliams",
+      "displayName": "Bob Williams",
+      "name": {
+        "givenName": "Bob",
+        "familyName": "Williams",
+        "formatted": "Bob Williams"
+      },
+      "emails": [
+        {"value": "bwilliams@example.com", "type": "work", "primary": true}
+      ],
+      "active": false,
+      "externalId": "emp-003"
+    }
+  ],
+  "groups": [
+    {
+      "displayName": "Engineering",
+      "members": ["jsmith", "ajonson"],
+      "externalId": "grp-eng"
+    },
+    {
+      "displayName": "Admins",
+      "members": ["ajonson"],
+      "externalId": "grp-admin"
+    }
+  ]
+}
