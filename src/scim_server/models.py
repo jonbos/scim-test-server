@@ -88,3 +88,26 @@ class GroupPatchV2(BaseModel):
 
     schemas: list[str] | None = None
     Operations: list[PatchOperation] | None = None
+
+
+class UserPatchV1(BaseModel):
+    """SCIM 1.1 user patch request.
+
+    Supports partial updates to user attributes.
+    For setting active=false (disable-on-delete), use: {"active": false}
+    """
+
+    schemas: list[str] | None = None
+    userName: str | None = None
+    name: Name | None = None
+    displayName: str | None = None
+    emails: list[Email] | None = None
+    active: bool | None = None
+    externalId: str | None = None
+
+
+class UserPatchV2(BaseModel):
+    """SCIM 2.0 user patch request using Operations array."""
+
+    schemas: list[str] | None = None
+    Operations: list[PatchOperation] | None = None

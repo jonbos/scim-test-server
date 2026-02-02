@@ -70,6 +70,29 @@ class Storage:
         user["meta"]["lastModified"] = now
         return user
 
+    def patch_user(self, user_id: str, patch_data: dict[str, Any]) -> dict[str, Any] | None:
+        """Apply partial updates to a user (SCIM PATCH).
+
+        Patches any attribute that is explicitly provided, except read-only fields (id, meta).
+        This supports all SCIM user attributes that the storage handles.
+        """
+        if user_id not in self.users:
+            return None
+
+        user = self.users[user_id]
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Read-only attributes that cannot be patched
+        read_only = {"id", "meta", "schemas"}
+
+        # Patch all provided attributes except read-only ones
+        for key, value in patch_data.items():
+            if key not in read_only and value is not None:
+                user[key] = value
+
+        user["meta"]["lastModified"] = now
+        return user
+
     def delete_user(self, user_id: str) -> bool:
         if user_id in self.users:
             del self.users[user_id]
@@ -170,19 +193,124 @@ class Storage:
         for group in self.groups.values():
             group["members"] = [m for m in group["members"] if m.get("value") != user_id]
 
+    def _get_nested_attr(self, resource: dict[str, Any], attr_path: str) -> Any:
+        """Get a potentially nested attribute value (e.g., 'meta.lastModified')."""
+        parts = attr_path.split(".")
+        value = resource
+        for part in parts:
+            if isinstance(value, dict):
+                value = value.get(part)
+            else:
+                return None
+        return value
+
     def _apply_filter(
         self, resources: list[dict[str, Any]], filter_str: str
     ) -> list[dict[str, Any]]:
-        """Basic filter support for userName eq "value" and displayName eq "value"."""
+        """SCIM filter support.
+
+        Supported operators:
+        - eq: equal (case-sensitive string comparison)
+        - co: contains (substring match)
+        - sw: starts with
+        - gt: greater than (string comparison, works for ISO dates)
+        - ge: greater than or equal
+        - lt: less than
+        - le: less than or equal
+        - pr: present (attribute exists and is not null/empty)
+        """
         filter_str = filter_str.strip()
 
+        # Handle "eq" operator
         if " eq " in filter_str:
             parts = filter_str.split(" eq ", 1)
             attr = parts[0].strip()
             value = parts[1].strip().strip('"').strip("'")
+            return [r for r in resources if self._get_nested_attr(r, attr) == value]
 
-            return [r for r in resources if r.get(attr) == value]
+        # Handle "co" operator (contains)
+        if " co " in filter_str:
+            parts = filter_str.split(" co ", 1)
+            attr = parts[0].strip()
+            value = parts[1].strip().strip('"').strip("'")
+            result = []
+            for r in resources:
+                attr_val = self._get_nested_attr(r, attr)
+                if attr_val and isinstance(attr_val, str) and value in attr_val:
+                    result.append(r)
+            return result
 
+        # Handle "sw" operator (starts with)
+        if " sw " in filter_str:
+            parts = filter_str.split(" sw ", 1)
+            attr = parts[0].strip()
+            value = parts[1].strip().strip('"').strip("'")
+            result = []
+            for r in resources:
+                attr_val = self._get_nested_attr(r, attr)
+                if attr_val and isinstance(attr_val, str) and attr_val.startswith(value):
+                    result.append(r)
+            return result
+
+        # Handle "gt" operator (greater than - for dates/strings)
+        if " gt " in filter_str:
+            parts = filter_str.split(" gt ", 1)
+            attr = parts[0].strip()
+            value = parts[1].strip().strip('"').strip("'")
+            result = []
+            for r in resources:
+                attr_val = self._get_nested_attr(r, attr)
+                if attr_val and isinstance(attr_val, str) and attr_val > value:
+                    result.append(r)
+            return result
+
+        # Handle "ge" operator (greater than or equal)
+        if " ge " in filter_str:
+            parts = filter_str.split(" ge ", 1)
+            attr = parts[0].strip()
+            value = parts[1].strip().strip('"').strip("'")
+            result = []
+            for r in resources:
+                attr_val = self._get_nested_attr(r, attr)
+                if attr_val and isinstance(attr_val, str) and attr_val >= value:
+                    result.append(r)
+            return result
+
+        # Handle "lt" operator (less than)
+        if " lt " in filter_str:
+            parts = filter_str.split(" lt ", 1)
+            attr = parts[0].strip()
+            value = parts[1].strip().strip('"').strip("'")
+            result = []
+            for r in resources:
+                attr_val = self._get_nested_attr(r, attr)
+                if attr_val and isinstance(attr_val, str) and attr_val < value:
+                    result.append(r)
+            return result
+
+        # Handle "le" operator (less than or equal)
+        if " le " in filter_str:
+            parts = filter_str.split(" le ", 1)
+            attr = parts[0].strip()
+            value = parts[1].strip().strip('"').strip("'")
+            result = []
+            for r in resources:
+                attr_val = self._get_nested_attr(r, attr)
+                if attr_val and isinstance(attr_val, str) and attr_val <= value:
+                    result.append(r)
+            return result
+
+        # Handle "pr" operator (present)
+        if " pr" in filter_str:
+            attr = filter_str.replace(" pr", "").strip()
+            result = []
+            for r in resources:
+                attr_val = self._get_nested_attr(r, attr)
+                if attr_val is not None and attr_val != "" and attr_val != []:
+                    result.append(r)
+            return result
+
+        # Unsupported filter - return all (could also raise error)
         return resources
 
 

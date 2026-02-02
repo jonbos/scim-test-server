@@ -2,11 +2,19 @@
 
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query, Request
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 
 from scim_server.config import allows_patch_for_groups, allows_put_for_groups, get_config
-from scim_server.models import GroupPatchV1, GroupPatchV2, GroupRequest, SeedData, UserRequest
+from scim_server.models import (
+    GroupPatchV1,
+    GroupPatchV2,
+    GroupRequest,
+    SeedData,
+    UserPatchV1,
+    UserPatchV2,
+    UserRequest,
+)
 from scim_server.storage import storage
 
 app = FastAPI(title="SCIM Server", description="SCIM 1.1 and 2.0 compliant server")
@@ -244,16 +252,31 @@ async def get_user_v1(user_id: str, request: Request):
 
 
 @app.post("/scim/v1/Users", status_code=201)
-async def create_user_v1(user_data: UserRequest, request: Request):
+async def create_user_v1(user_data: UserRequest, request: Request, response: Response):
     if storage.get_user_by_username(user_data.userName):
         return scim_error_v1(409, f"User {user_data.userName} already exists")
     user = storage.create_user(user_data.model_dump(exclude_none=True))
+    base_url = str(request.base_url).rstrip("/")
+    response.headers["Location"] = f"{base_url}/scim/v1/Users/{user['id']}"
     return format_user_v1(user, request)
 
 
 @app.put("/scim/v1/Users/{user_id}")
 async def update_user_v1(user_id: str, user_data: UserRequest, request: Request):
     user = storage.update_user(user_id, user_data.model_dump(exclude_none=True))
+    if not user:
+        return scim_error_v1(404, f"User {user_id} not found")
+    return format_user_v1(user, request)
+
+
+@app.patch("/scim/v1/Users/{user_id}")
+async def patch_user_v1(user_id: str, patch_data: UserPatchV1, request: Request):
+    """SCIM 1.1 User PATCH - partial update.
+
+    Supports patching any user attribute. Common use case: setting active=false
+    for disable-on-delete behavior.
+    """
+    user = storage.patch_user(user_id, patch_data.model_dump(exclude_none=True))
     if not user:
         return scim_error_v1(404, f"User {user_id} not found")
     return format_user_v1(user, request)
@@ -297,8 +320,10 @@ async def get_group_v1(group_id: str, request: Request):
 
 
 @app.post("/scim/v1/Groups", status_code=201)
-async def create_group_v1(group_data: GroupRequest, request: Request):
+async def create_group_v1(group_data: GroupRequest, request: Request, response: Response):
     group = storage.create_group(group_data.model_dump(exclude_none=True))
+    base_url = str(request.base_url).rstrip("/")
+    response.headers["Location"] = f"{base_url}/scim/v1/Groups/{group['id']}"
     return format_group_v1(group, request)
 
 
@@ -363,16 +388,47 @@ async def get_user_v2(user_id: str, request: Request):
 
 
 @app.post("/scim/v2/Users", status_code=201)
-async def create_user_v2(user_data: UserRequest, request: Request):
+async def create_user_v2(user_data: UserRequest, request: Request, response: Response):
     if storage.get_user_by_username(user_data.userName):
         return scim_error_v2(409, f"User {user_data.userName} already exists")
     user = storage.create_user(user_data.model_dump(exclude_none=True))
+    base_url = str(request.base_url).rstrip("/")
+    response.headers["Location"] = f"{base_url}/scim/v2/Users/{user['id']}"
     return format_user_v2(user, request)
 
 
 @app.put("/scim/v2/Users/{user_id}")
 async def update_user_v2(user_id: str, user_data: UserRequest, request: Request):
     user = storage.update_user(user_id, user_data.model_dump(exclude_none=True))
+    if not user:
+        return scim_error_v2(404, f"User {user_id} not found")
+    return format_user_v2(user, request)
+
+
+@app.patch("/scim/v2/Users/{user_id}")
+async def patch_user_v2(user_id: str, patch_data: UserPatchV2, request: Request):
+    """SCIM 2.0 User PATCH using Operations array.
+
+    Supports 'replace' operation for setting attribute values.
+    Example: {"Operations": [{"op": "replace", "path": "active", "value": false}]}
+    """
+    if not patch_data.Operations:
+        return scim_error_v2(400, "No operations provided")
+
+    # Convert SCIM 2.0 Operations to patch data
+    patch_dict: dict = {}
+    for op in patch_data.Operations:
+        if op.op.lower() == "replace" and op.path:
+            patch_dict[op.path] = op.value
+        elif op.op.lower() == "add" and op.path:
+            patch_dict[op.path] = op.value
+        elif op.op.lower() == "remove" and op.path:
+            patch_dict[op.path] = None
+
+    if not patch_dict:
+        return scim_error_v2(400, "No valid operations found")
+
+    user = storage.patch_user(user_id, patch_dict)
     if not user:
         return scim_error_v2(404, f"User {user_id} not found")
     return format_user_v2(user, request)
@@ -416,8 +472,10 @@ async def get_group_v2(group_id: str, request: Request):
 
 
 @app.post("/scim/v2/Groups", status_code=201)
-async def create_group_v2(group_data: GroupRequest, request: Request):
+async def create_group_v2(group_data: GroupRequest, request: Request, response: Response):
     group = storage.create_group(group_data.model_dump(exclude_none=True))
+    base_url = str(request.base_url).rstrip("/")
+    response.headers["Location"] = f"{base_url}/scim/v2/Groups/{group['id']}"
     return format_group_v2(group, request)
 
 
