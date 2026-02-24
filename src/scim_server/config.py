@@ -18,7 +18,6 @@ import os
 from dataclasses import dataclass, field
 from typing import Any
 
-
 # Preset definitions - each preset defines defaults for all settings
 PRESETS: dict[str, dict[str, bool]] = {
     "permissive": {
@@ -90,7 +89,8 @@ class ScimConfig:
         for preset_settings in PRESETS.values():
             valid_keys.update(preset_settings.keys())
         if key not in valid_keys:
-            raise ValueError(f"Invalid setting '{key}'. Valid settings: {', '.join(sorted(valid_keys))}")
+            valid = ", ".join(sorted(valid_keys))
+            raise ValueError(f"Invalid setting '{key}'. Valid settings: {valid}")
         self._overrides[key] = value
 
     def clear_override(self, key: str) -> None:

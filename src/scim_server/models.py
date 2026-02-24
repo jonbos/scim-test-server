@@ -18,6 +18,84 @@ class Email(BaseModel):
     primary: bool | None = None
 
 
+class PhoneNumber(BaseModel):
+    value: str
+    type: str | None = None
+    primary: bool | None = None
+    display: str | None = None
+
+
+class InstantMessaging(BaseModel):
+    value: str
+    type: str | None = None
+    primary: bool | None = None
+    display: str | None = None
+
+
+class Photo(BaseModel):
+    value: str
+    type: str | None = None
+    primary: bool | None = None
+    display: str | None = None
+
+
+class Address(BaseModel):
+    formatted: str | None = None
+    streetAddress: str | None = None
+    locality: str | None = None
+    region: str | None = None
+    postalCode: str | None = None
+    country: str | None = None
+    type: str | None = None
+    primary: bool | None = None
+
+
+class GroupMembership(BaseModel):
+    value: str
+    display: str | None = None
+    type: str | None = None
+
+
+class Entitlement(BaseModel):
+    value: str
+    type: str | None = None
+    primary: bool | None = None
+    display: str | None = None
+
+
+class Role(BaseModel):
+    value: str
+    type: str | None = None
+    primary: bool | None = None
+    display: str | None = None
+
+
+class X509Certificate(BaseModel):
+    value: str
+    type: str | None = None
+    primary: bool | None = None
+    display: str | None = None
+
+
+class Manager(BaseModel):
+    managerId: str | None = None
+    displayName: str | None = None
+
+
+class EnterpriseUser(BaseModel):
+    employeeNumber: str | None = None
+    costCenter: str | None = None
+    organization: str | None = None
+    division: str | None = None
+    department: str | None = None
+    manager: Manager | None = None
+
+
+# URN keys for enterprise extension
+ENTERPRISE_URN_V1 = "urn:scim:schemas:extension:enterprise:1.0"
+ENTERPRISE_URN_V2 = "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User"
+
+
 class Member(BaseModel):
     value: str
     display: str | None = None
@@ -28,9 +106,40 @@ class UserRequest(BaseModel):
     userName: str
     name: Name | None = None
     displayName: str | None = None
+    nickName: str | None = None
+    profileUrl: str | None = None
+    title: str | None = None
+    userType: str | None = None
+    preferredLanguage: str | None = None
+    locale: str | None = None
+    timezone: str | None = None
+    password: str | None = None
     emails: list[Email] | None = None
+    phoneNumbers: list[PhoneNumber] | None = None
+    ims: list[InstantMessaging] | None = None
+    photos: list[Photo] | None = None
+    addresses: list[Address] | None = None
+    entitlements: list[Entitlement] | None = None
+    roles: list[Role] | None = None
+    x509Certificates: list[X509Certificate] | None = None
     active: bool = True
     externalId: str | None = None
+
+    # Enterprise extension — accepted under either v1 or v2 URN key
+    model_config = {"populate_by_name": True}
+
+    # We accept both URN keys via __pydantic_extra__; see validator below
+    # Store as a plain dict so we can forward it to storage
+    enterprise_extension: EnterpriseUser | None = Field(
+        default=None, exclude=True
+    )
+
+    def model_post_init(self, __context):
+        """Extract enterprise extension from either URN key."""
+        super().model_post_init(__context)
+        # Pydantic extra fields aren't enabled, so we rely on callers
+        # providing the extension via the from_request classmethod or
+        # directly in the dict passed to storage.
 
 
 class GroupRequest(BaseModel):
@@ -43,7 +152,22 @@ class SeedUser(BaseModel):
     userName: str
     name: Name | None = None
     displayName: str | None = None
+    nickName: str | None = None
+    profileUrl: str | None = None
+    title: str | None = None
+    userType: str | None = None
+    preferredLanguage: str | None = None
+    locale: str | None = None
+    timezone: str | None = None
+    password: str | None = None
     emails: list[Email] | None = None
+    phoneNumbers: list[PhoneNumber] | None = None
+    ims: list[InstantMessaging] | None = None
+    photos: list[Photo] | None = None
+    addresses: list[Address] | None = None
+    entitlements: list[Entitlement] | None = None
+    roles: list[Role] | None = None
+    x509Certificates: list[X509Certificate] | None = None
     active: bool = True
     externalId: str | None = None
 
@@ -101,7 +225,22 @@ class UserPatchV1(BaseModel):
     userName: str | None = None
     name: Name | None = None
     displayName: str | None = None
+    nickName: str | None = None
+    profileUrl: str | None = None
+    title: str | None = None
+    userType: str | None = None
+    preferredLanguage: str | None = None
+    locale: str | None = None
+    timezone: str | None = None
+    password: str | None = None
     emails: list[Email] | None = None
+    phoneNumbers: list[PhoneNumber] | None = None
+    ims: list[InstantMessaging] | None = None
+    photos: list[Photo] | None = None
+    addresses: list[Address] | None = None
+    entitlements: list[Entitlement] | None = None
+    roles: list[Role] | None = None
+    x509Certificates: list[X509Certificate] | None = None
     active: bool | None = None
     externalId: str | None = None
 

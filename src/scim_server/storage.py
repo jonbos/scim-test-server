@@ -4,6 +4,18 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
+# All user attributes that storage handles (excludes read-only: id, meta, groups)
+USER_ATTRS = [
+    "userName", "name", "emails", "active", "displayName", "externalId",
+    "nickName", "profileUrl", "title", "userType", "preferredLanguage",
+    "locale", "timezone", "password",
+    "phoneNumbers", "ims", "photos", "addresses",
+    "entitlements", "roles", "x509Certificates",
+    # Enterprise extension URN keys
+    "urn:scim:schemas:extension:enterprise:1.0",
+    "urn:ietf:params:scim:schemas:extension:enterprise:2.0:User",
+]
+
 
 class Storage:
     def __init__(self):
@@ -17,20 +29,21 @@ class Storage:
     def create_user(self, user_data: dict[str, Any]) -> dict[str, Any]:
         user_id = str(uuid.uuid4())
         now = datetime.now(timezone.utc).isoformat()
-        user = {
+        user: dict[str, Any] = {
             "id": user_id,
-            "userName": user_data.get("userName"),
-            "name": user_data.get("name", {}),
-            "emails": user_data.get("emails", []),
-            "active": user_data.get("active", True),
-            "displayName": user_data.get("displayName"),
-            "externalId": user_data.get("externalId"),
             "meta": {
                 "created": now,
                 "lastModified": now,
                 "resourceType": "User",
             },
         }
+        for key in USER_ATTRS:
+            if key in user_data:
+                user[key] = user_data[key]
+            elif key == "userName":
+                user[key] = user_data.get("userName")
+            elif key == "active":
+                user[key] = user_data.get("active", True)
         self.users[user_id] = user
         return user
 
@@ -42,6 +55,20 @@ class Storage:
             if user.get("userName") == username:
                 return user
         return None
+
+    def get_user_groups(self, user_id: str) -> list[dict[str, Any]]:
+        """Return group memberships for a user (read-only `groups` attribute)."""
+        memberships = []
+        for group in self.groups.values():
+            for member in group.get("members", []):
+                if member.get("value") == user_id:
+                    memberships.append({
+                        "value": group["id"],
+                        "display": group.get("displayName", ""),
+                        "type": "direct",
+                    })
+                    break
+        return memberships
 
     def list_users(
         self, start_index: int = 1, count: int = 100, filter_str: str | None = None
@@ -63,7 +90,7 @@ class Storage:
         user = self.users[user_id]
         now = datetime.now(timezone.utc).isoformat()
 
-        for key in ["userName", "name", "emails", "active", "displayName", "externalId"]:
+        for key in USER_ATTRS:
             if key in user_data:
                 user[key] = user_data[key]
 
@@ -83,7 +110,7 @@ class Storage:
         now = datetime.now(timezone.utc).isoformat()
 
         # Read-only attributes that cannot be patched
-        read_only = {"id", "meta", "schemas"}
+        read_only = {"id", "meta", "schemas", "groups"}
 
         # Patch all provided attributes except read-only ones
         for key, value in patch_data.items():

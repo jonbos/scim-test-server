@@ -1,12 +1,17 @@
 """SCIM 1.1 and 2.0 server with in-memory storage."""
 
+import os
+import secrets
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Query, Request, Response
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from scim_server.config import allows_patch_for_groups, allows_put_for_groups, get_config
 from scim_server.models import (
+    ENTERPRISE_URN_V1,
+    ENTERPRISE_URN_V2,
     GroupPatchV1,
     GroupPatchV2,
     GroupRequest,
@@ -17,7 +22,39 @@ from scim_server.models import (
 )
 from scim_server.storage import storage
 
-app = FastAPI(title="SCIM Server", description="SCIM 1.1 and 2.0 compliant server")
+security = HTTPBasic()
+
+
+def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
+    expected_username = os.environ.get("BASIC_AUTH_USERNAME")
+    expected_password = os.environ.get("BASIC_AUTH_PASSWORD")
+    if expected_username is None or expected_password is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Server authentication not configured",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+    username_ok = secrets.compare_digest(
+        credentials.username.encode("utf-8"),
+        expected_username.encode("utf-8"),
+    )
+    password_ok = secrets.compare_digest(
+        credentials.password.encode("utf-8"),
+        expected_password.encode("utf-8"),
+    )
+    if not (username_ok and password_ok):
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid credentials",
+            headers={"WWW-Authenticate": "Basic"},
+        )
+
+
+app = FastAPI(
+    title="SCIM Server",
+    description="SCIM 1.1 and 2.0 compliant server",
+    dependencies=[Depends(verify_credentials)],
+)
 
 SCIM_V1_SCHEMA_USER = "urn:scim:schemas:core:1.0"
 SCIM_V1_SCHEMA_GROUP = "urn:scim:schemas:core:1.0"
@@ -26,11 +63,35 @@ SCIM_V2_SCHEMA_GROUP = "urn:ietf:params:scim:schemas:core:2.0:Group"
 SCIM_V2_LIST_RESPONSE = "urn:ietf:params:scim:api:messages:2.0:ListResponse"
 SCIM_V2_ERROR = "urn:ietf:params:scim:api:messages:2.0:Error"
 
+# Optional multi-valued attributes included when present on the user
+_OPTIONAL_MULTI = [
+    "phoneNumbers", "ims", "photos", "addresses",
+    "entitlements", "roles", "x509Certificates",
+]
+# Optional singular attributes included when present on the user
+_OPTIONAL_SINGULAR = [
+    "nickName", "profileUrl", "title", "userType",
+    "preferredLanguage", "locale", "timezone",
+]
 
-def format_user_v1(user: dict[str, Any], request: Request) -> dict[str, Any]:
+
+def _build_user_response(
+    user: dict[str, Any], request: Request, version: int,
+) -> dict[str, Any]:
+    """Build a SCIM user response dict for v1 or v2."""
+    if version == 1:
+        schema_user = SCIM_V1_SCHEMA_USER
+        enterprise_urn = ENTERPRISE_URN_V1
+        path_prefix = "v1"
+    else:
+        schema_user = SCIM_V2_SCHEMA_USER
+        enterprise_urn = ENTERPRISE_URN_V2
+        path_prefix = "v2"
+
     base_url = str(request.base_url).rstrip("/")
-    return {
-        "schemas": [SCIM_V1_SCHEMA_USER],
+    schemas = [schema_user]
+
+    result: dict[str, Any] = {
         "id": user["id"],
         "userName": user["userName"],
         "name": user.get("name", {}),
@@ -38,29 +99,48 @@ def format_user_v1(user: dict[str, Any], request: Request) -> dict[str, Any]:
         "emails": user.get("emails", []),
         "active": user.get("active", True),
         "externalId": user.get("externalId"),
-        "meta": {
-            **user["meta"],
-            "location": f"{base_url}/scim/v1/Users/{user['id']}",
-        },
     }
+
+    # Include optional singular attributes when present
+    for attr in _OPTIONAL_SINGULAR:
+        val = user.get(attr)
+        if val is not None:
+            result[attr] = val
+
+    # Include optional multi-valued attributes when present
+    for attr in _OPTIONAL_MULTI:
+        val = user.get(attr)
+        if val is not None:
+            result[attr] = val
+
+    # Read-only groups (computed from group memberships)
+    groups = storage.get_user_groups(user["id"])
+    if groups:
+        result["groups"] = groups
+
+    # Enterprise extension — stored under the v1 or v2 URN key
+    ext = user.get(ENTERPRISE_URN_V1) or user.get(ENTERPRISE_URN_V2)
+    if ext:
+        result[enterprise_urn] = ext
+        schemas.append(enterprise_urn)
+
+    # password is write-only — never include in responses
+    # (it may exist in the stored dict but we intentionally omit it)
+
+    result["schemas"] = schemas
+    result["meta"] = {
+        **user["meta"],
+        "location": f"{base_url}/scim/{path_prefix}/Users/{user['id']}",
+    }
+    return result
+
+
+def format_user_v1(user: dict[str, Any], request: Request) -> dict[str, Any]:
+    return _build_user_response(user, request, version=1)
 
 
 def format_user_v2(user: dict[str, Any], request: Request) -> dict[str, Any]:
-    base_url = str(request.base_url).rstrip("/")
-    return {
-        "schemas": [SCIM_V2_SCHEMA_USER],
-        "id": user["id"],
-        "userName": user["userName"],
-        "name": user.get("name", {}),
-        "displayName": user.get("displayName"),
-        "emails": user.get("emails", []),
-        "active": user.get("active", True),
-        "externalId": user.get("externalId"),
-        "meta": {
-            **user["meta"],
-            "location": f"{base_url}/scim/v2/Users/{user['id']}",
-        },
-    }
+    return _build_user_response(user, request, version=2)
 
 
 def format_group_v1(group: dict[str, Any], request: Request) -> dict[str, Any]:
@@ -109,6 +189,13 @@ def scim_error_v2(status: int, detail: str) -> JSONResponse:
             "status": status,
         },
     )
+
+
+def _merge_enterprise_extension(user_dict: dict[str, Any], raw_body: dict[str, Any]) -> None:
+    """Extract enterprise extension URN keys from raw JSON body into user_dict."""
+    for urn in (ENTERPRISE_URN_V1, ENTERPRISE_URN_V2):
+        if urn in raw_body:
+            user_dict[urn] = raw_body[urn]
 
 
 # ============================================================================
@@ -252,31 +339,46 @@ async def get_user_v1(user_id: str, request: Request):
 
 
 @app.post("/scim/v1/Users", status_code=201)
-async def create_user_v1(user_data: UserRequest, request: Request, response: Response):
+async def create_user_v1(request: Request, response: Response):
+    raw_body = await request.json()
+    user_data = UserRequest(**{k: v for k, v in raw_body.items()
+                               if k not in (ENTERPRISE_URN_V1, ENTERPRISE_URN_V2, "schemas")})
     if storage.get_user_by_username(user_data.userName):
         return scim_error_v1(409, f"User {user_data.userName} already exists")
-    user = storage.create_user(user_data.model_dump(exclude_none=True))
+    user_dict = user_data.model_dump(exclude_none=True)
+    _merge_enterprise_extension(user_dict, raw_body)
+    user = storage.create_user(user_dict)
     base_url = str(request.base_url).rstrip("/")
     response.headers["Location"] = f"{base_url}/scim/v1/Users/{user['id']}"
     return format_user_v1(user, request)
 
 
 @app.put("/scim/v1/Users/{user_id}")
-async def update_user_v1(user_id: str, user_data: UserRequest, request: Request):
-    user = storage.update_user(user_id, user_data.model_dump(exclude_none=True))
+async def update_user_v1(user_id: str, request: Request):
+    raw_body = await request.json()
+    user_data = UserRequest(**{k: v for k, v in raw_body.items()
+                               if k not in (ENTERPRISE_URN_V1, ENTERPRISE_URN_V2, "schemas")})
+    user_dict = user_data.model_dump(exclude_none=True)
+    _merge_enterprise_extension(user_dict, raw_body)
+    user = storage.update_user(user_id, user_dict)
     if not user:
         return scim_error_v1(404, f"User {user_id} not found")
     return format_user_v1(user, request)
 
 
 @app.patch("/scim/v1/Users/{user_id}")
-async def patch_user_v1(user_id: str, patch_data: UserPatchV1, request: Request):
+async def patch_user_v1(user_id: str, request: Request):
     """SCIM 1.1 User PATCH - partial update.
 
     Supports patching any user attribute. Common use case: setting active=false
     for disable-on-delete behavior.
     """
-    user = storage.patch_user(user_id, patch_data.model_dump(exclude_none=True))
+    raw_body = await request.json()
+    patch_data = UserPatchV1(**{k: v for k, v in raw_body.items()
+                                if k not in (ENTERPRISE_URN_V1, ENTERPRISE_URN_V2)})
+    patch_dict = patch_data.model_dump(exclude_none=True)
+    _merge_enterprise_extension(patch_dict, raw_body)
+    user = storage.patch_user(user_id, patch_dict)
     if not user:
         return scim_error_v1(404, f"User {user_id} not found")
     return format_user_v1(user, request)
@@ -388,30 +490,43 @@ async def get_user_v2(user_id: str, request: Request):
 
 
 @app.post("/scim/v2/Users", status_code=201)
-async def create_user_v2(user_data: UserRequest, request: Request, response: Response):
+async def create_user_v2(request: Request, response: Response):
+    raw_body = await request.json()
+    user_data = UserRequest(**{k: v for k, v in raw_body.items()
+                               if k not in (ENTERPRISE_URN_V1, ENTERPRISE_URN_V2, "schemas")})
     if storage.get_user_by_username(user_data.userName):
         return scim_error_v2(409, f"User {user_data.userName} already exists")
-    user = storage.create_user(user_data.model_dump(exclude_none=True))
+    user_dict = user_data.model_dump(exclude_none=True)
+    _merge_enterprise_extension(user_dict, raw_body)
+    user = storage.create_user(user_dict)
     base_url = str(request.base_url).rstrip("/")
     response.headers["Location"] = f"{base_url}/scim/v2/Users/{user['id']}"
     return format_user_v2(user, request)
 
 
 @app.put("/scim/v2/Users/{user_id}")
-async def update_user_v2(user_id: str, user_data: UserRequest, request: Request):
-    user = storage.update_user(user_id, user_data.model_dump(exclude_none=True))
+async def update_user_v2(user_id: str, request: Request):
+    raw_body = await request.json()
+    user_data = UserRequest(**{k: v for k, v in raw_body.items()
+                               if k not in (ENTERPRISE_URN_V1, ENTERPRISE_URN_V2, "schemas")})
+    user_dict = user_data.model_dump(exclude_none=True)
+    _merge_enterprise_extension(user_dict, raw_body)
+    user = storage.update_user(user_id, user_dict)
     if not user:
         return scim_error_v2(404, f"User {user_id} not found")
     return format_user_v2(user, request)
 
 
 @app.patch("/scim/v2/Users/{user_id}")
-async def patch_user_v2(user_id: str, patch_data: UserPatchV2, request: Request):
+async def patch_user_v2(user_id: str, request: Request):
     """SCIM 2.0 User PATCH using Operations array.
 
     Supports 'replace' operation for setting attribute values.
     Example: {"Operations": [{"op": "replace", "path": "active", "value": false}]}
     """
+    raw_body = await request.json()
+    patch_data = UserPatchV2(**{k: v for k, v in raw_body.items()
+                                if k not in (ENTERPRISE_URN_V1, ENTERPRISE_URN_V2)})
     if not patch_data.Operations:
         return scim_error_v2(400, "No operations provided")
 
@@ -424,6 +539,8 @@ async def patch_user_v2(user_id: str, patch_data: UserPatchV2, request: Request)
             patch_dict[op.path] = op.value
         elif op.op.lower() == "remove" and op.path:
             patch_dict[op.path] = None
+
+    _merge_enterprise_extension(patch_dict, raw_body)
 
     if not patch_dict:
         return scim_error_v2(400, "No valid operations found")

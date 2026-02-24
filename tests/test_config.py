@@ -2,7 +2,7 @@
 
 import pytest
 
-from scim_server.config import ScimConfig, PRESETS, get_config
+from scim_server.config import ScimConfig
 
 
 class TestScimConfig:
