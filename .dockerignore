@@ -4,6 +4,7 @@ __pycache__
 .git
 .gitignore
 *.md
+!README.md
 .venv
 venv
 .pytest_cache
