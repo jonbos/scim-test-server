@@ -1,5 +1,7 @@
 """Pydantic models for SCIM requests and responses."""
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
@@ -77,18 +79,43 @@ class X509Certificate(BaseModel):
     display: str | None = None
 
 
-class Manager(BaseModel):
+class ManagerV1(BaseModel):
+    """SCIM 1.1 manager (draft-scim-core-schema §7)."""
+
     managerId: str | None = None
     displayName: str | None = None
 
 
-class EnterpriseUser(BaseModel):
+class ManagerV2(BaseModel):
+    """SCIM 2.0 manager (RFC 7643 §4.3)."""
+
+    value: str | None = None
+    ref: str | None = Field(default=None, alias="$ref")
+    displayName: str | None = None
+
+    model_config = {"populate_by_name": True}
+
+
+class EnterpriseUserV1(BaseModel):
+    """SCIM 1.1 enterprise extension (urn:scim:schemas:extension:enterprise:1.0)."""
+
     employeeNumber: str | None = None
     costCenter: str | None = None
     organization: str | None = None
     division: str | None = None
     department: str | None = None
-    manager: Manager | None = None
+    manager: ManagerV1 | None = None
+
+
+class EnterpriseUserV2(BaseModel):
+    """SCIM 2.0 enterprise extension (RFC 7643 §4.3)."""
+
+    employeeNumber: str | None = None
+    costCenter: str | None = None
+    organization: str | None = None
+    division: str | None = None
+    department: str | None = None
+    manager: ManagerV2 | None = None
 
 
 # URN keys for enterprise extension
@@ -130,7 +157,7 @@ class UserRequest(BaseModel):
 
     # We accept both URN keys via __pydantic_extra__; see validator below
     # Store as a plain dict so we can forward it to storage
-    enterprise_extension: EnterpriseUser | None = Field(
+    enterprise_extension: EnterpriseUserV1 | EnterpriseUserV2 | None = Field(
         default=None, exclude=True
     )
 
@@ -204,7 +231,7 @@ class PatchOperation(BaseModel):
 
     op: str
     path: str | None = None
-    value: list[dict] | dict | str | None = None
+    value: Any = None
 
 
 class GroupPatchV2(BaseModel):

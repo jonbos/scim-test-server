@@ -121,6 +121,7 @@ def _build_user_response(
     # Enterprise extension — stored under the v1 or v2 URN key
     ext = user.get(ENTERPRISE_URN_V1) or user.get(ENTERPRISE_URN_V2)
     if ext:
+        ext = _normalize_enterprise_manager(dict(ext), version)
         result[enterprise_urn] = ext
         schemas.append(enterprise_urn)
 
@@ -196,6 +197,30 @@ def _merge_enterprise_extension(user_dict: dict[str, Any], raw_body: dict[str, A
     for urn in (ENTERPRISE_URN_V1, ENTERPRISE_URN_V2):
         if urn in raw_body:
             user_dict[urn] = raw_body[urn]
+
+
+def _normalize_enterprise_manager(ext: dict[str, Any], version: int) -> dict[str, Any]:
+    """Normalize manager sub-attribute for the target SCIM version.
+
+    SCIM 1.1 uses 'managerId'; SCIM 2.0 uses 'value' + '$ref'.
+    """
+    mgr = ext.get("manager")
+    if not mgr or not isinstance(mgr, dict):
+        return ext
+
+    mgr = dict(mgr)
+    if version == 1:
+        # v2 -> v1: rename 'value' to 'managerId', drop '$ref'
+        if "value" in mgr and "managerId" not in mgr:
+            mgr["managerId"] = mgr.pop("value")
+        mgr.pop("$ref", None)
+    else:
+        # v1 -> v2: rename 'managerId' to 'value'
+        if "managerId" in mgr and "value" not in mgr:
+            mgr["value"] = mgr.pop("managerId")
+
+    ext["manager"] = mgr
+    return ext
 
 
 # ============================================================================
