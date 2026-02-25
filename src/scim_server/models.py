@@ -79,6 +79,10 @@ class X509Certificate(BaseModel):
     display: str | None = None
 
 
+# ---------------------------------------------------------------------------
+# Enterprise extension — differs between SCIM 1.1 and 2.0
+# ---------------------------------------------------------------------------
+
 class ManagerV1(BaseModel):
     """SCIM 1.1 manager (draft-scim-core-schema §7)."""
 
@@ -129,7 +133,11 @@ class Member(BaseModel):
     type: str | None = "User"
 
 
-class UserRequest(BaseModel):
+# ---------------------------------------------------------------------------
+# Shared core user fields (identical between SCIM 1.1 and 2.0)
+# ---------------------------------------------------------------------------
+
+class _UserFieldsMixin(BaseModel):
     userName: str
     name: Name | None = None
     displayName: str | None = None
@@ -152,28 +160,123 @@ class UserRequest(BaseModel):
     active: bool = True
     externalId: str | None = None
 
-    # Enterprise extension — accepted under either v1 or v2 URN key
-    model_config = {"populate_by_name": True}
 
-    # We accept both URN keys via __pydantic_extra__; see validator below
-    # Store as a plain dict so we can forward it to storage
-    enterprise_extension: EnterpriseUserV1 | EnterpriseUserV2 | None = Field(
-        default=None, exclude=True
+class _UserPatchFieldsMixin(BaseModel):
+    """Shared patch fields (all optional for partial update)."""
+
+    schemas: list[str] | None = None
+    userName: str | None = None
+    name: Name | None = None
+    displayName: str | None = None
+    nickName: str | None = None
+    profileUrl: str | None = None
+    title: str | None = None
+    userType: str | None = None
+    preferredLanguage: str | None = None
+    locale: str | None = None
+    timezone: str | None = None
+    password: str | None = None
+    emails: list[Email] | None = None
+    phoneNumbers: list[PhoneNumber] | None = None
+    ims: list[InstantMessaging] | None = None
+    photos: list[Photo] | None = None
+    addresses: list[Address] | None = None
+    entitlements: list[Entitlement] | None = None
+    roles: list[Role] | None = None
+    x509Certificates: list[X509Certificate] | None = None
+    active: bool | None = None
+    externalId: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# SCIM v1 request models
+# ---------------------------------------------------------------------------
+
+class UserRequestV1(_UserFieldsMixin):
+    """SCIM 1.1 user create/replace request."""
+
+    schemas: list[str] | None = None
+    enterprise_extension: EnterpriseUserV1 | None = Field(
+        default=None, alias=ENTERPRISE_URN_V1,
     )
 
-    def model_post_init(self, __context):
-        """Extract enterprise extension from either URN key."""
-        super().model_post_init(__context)
-        # Pydantic extra fields aren't enabled, so we rely on callers
-        # providing the extension via the from_request classmethod or
-        # directly in the dict passed to storage.
+    model_config = {"populate_by_name": True}
 
+
+class UserPatchV1(_UserPatchFieldsMixin):
+    """SCIM 1.1 user patch request — partial attribute merge."""
+
+    enterprise_extension: EnterpriseUserV1 | None = Field(
+        default=None, alias=ENTERPRISE_URN_V1,
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+# ---------------------------------------------------------------------------
+# SCIM v2 request models
+# ---------------------------------------------------------------------------
+
+class UserRequestV2(_UserFieldsMixin):
+    """SCIM 2.0 user create/replace request."""
+
+    schemas: list[str] | None = None
+    enterprise_extension: EnterpriseUserV2 | None = Field(
+        default=None, alias=ENTERPRISE_URN_V2,
+    )
+
+    model_config = {"populate_by_name": True}
+
+
+class PatchOperation(BaseModel):
+    """SCIM 2.0 patch operation."""
+
+    op: str
+    path: str | None = None
+    value: Any = None
+
+
+class UserPatchV2(BaseModel):
+    """SCIM 2.0 user patch request using Operations array."""
+
+    schemas: list[str] | None = None
+    Operations: list[PatchOperation] | None = None
+
+
+# ---------------------------------------------------------------------------
+# Group models (identical between v1 and v2 except patch format)
+# ---------------------------------------------------------------------------
 
 class GroupRequest(BaseModel):
     displayName: str
     members: list[Member] | None = None
     externalId: str | None = None
 
+
+class MemberPatchOperation(BaseModel):
+    """SCIM 1.1 member patch operation."""
+
+    value: str
+    operation: str = "add"
+
+
+class GroupPatchV1(BaseModel):
+    """SCIM 1.1 group patch request."""
+
+    schemas: list[str] | None = None
+    members: list[MemberPatchOperation] | None = None
+
+
+class GroupPatchV2(BaseModel):
+    """SCIM 2.0 group patch request."""
+
+    schemas: list[str] | None = None
+    Operations: list[PatchOperation] | None = None
+
+
+# ---------------------------------------------------------------------------
+# Admin / seed models
+# ---------------------------------------------------------------------------
 
 class SeedUser(BaseModel):
     userName: str
@@ -210,70 +313,3 @@ class SeedGroup(BaseModel):
 class SeedData(BaseModel):
     users: list[SeedUser] | None = None
     groups: list[SeedGroup] | None = None
-
-
-class MemberPatchOperation(BaseModel):
-    """SCIM 1.1 member patch operation."""
-
-    value: str
-    operation: str = "add"
-
-
-class GroupPatchV1(BaseModel):
-    """SCIM 1.1 group patch request."""
-
-    schemas: list[str] | None = None
-    members: list[MemberPatchOperation] | None = None
-
-
-class PatchOperation(BaseModel):
-    """SCIM 2.0 patch operation."""
-
-    op: str
-    path: str | None = None
-    value: Any = None
-
-
-class GroupPatchV2(BaseModel):
-    """SCIM 2.0 group patch request."""
-
-    schemas: list[str] | None = None
-    Operations: list[PatchOperation] | None = None
-
-
-class UserPatchV1(BaseModel):
-    """SCIM 1.1 user patch request.
-
-    Supports partial updates to user attributes.
-    For setting active=false (disable-on-delete), use: {"active": false}
-    """
-
-    schemas: list[str] | None = None
-    userName: str | None = None
-    name: Name | None = None
-    displayName: str | None = None
-    nickName: str | None = None
-    profileUrl: str | None = None
-    title: str | None = None
-    userType: str | None = None
-    preferredLanguage: str | None = None
-    locale: str | None = None
-    timezone: str | None = None
-    password: str | None = None
-    emails: list[Email] | None = None
-    phoneNumbers: list[PhoneNumber] | None = None
-    ims: list[InstantMessaging] | None = None
-    photos: list[Photo] | None = None
-    addresses: list[Address] | None = None
-    entitlements: list[Entitlement] | None = None
-    roles: list[Role] | None = None
-    x509Certificates: list[X509Certificate] | None = None
-    active: bool | None = None
-    externalId: str | None = None
-
-
-class UserPatchV2(BaseModel):
-    """SCIM 2.0 user patch request using Operations array."""
-
-    schemas: list[str] | None = None
-    Operations: list[PatchOperation] | None = None

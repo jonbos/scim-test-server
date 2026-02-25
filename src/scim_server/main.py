@@ -18,7 +18,8 @@ from scim_server.models import (
     SeedData,
     UserPatchV1,
     UserPatchV2,
-    UserRequest,
+    UserRequestV1,
+    UserRequestV2,
 )
 from scim_server.storage import storage
 
@@ -199,6 +200,21 @@ def _merge_enterprise_extension(user_dict: dict[str, Any], raw_body: dict[str, A
             user_dict[urn] = raw_body[urn]
 
 
+def _dump_user_request(
+    model: UserRequestV1 | UserRequestV2, urn: str,
+) -> dict[str, Any]:
+    """Dump a versioned user request model to a storage-ready dict.
+
+    Includes the enterprise extension under its URN key if present.
+    """
+    result = model.model_dump(exclude_none=True, exclude={"enterprise_extension", "schemas"})
+    if model.enterprise_extension is not None:
+        result[urn] = model.enterprise_extension.model_dump(
+            exclude_none=True, by_alias=True,
+        )
+    return result
+
+
 def _normalize_enterprise_manager(ext: dict[str, Any], version: int) -> dict[str, Any]:
     """Normalize manager sub-attribute for the target SCIM version.
 
@@ -366,12 +382,10 @@ async def get_user_v1(user_id: str, request: Request):
 @app.post("/scim/v1/Users", status_code=201)
 async def create_user_v1(request: Request, response: Response):
     raw_body = await request.json()
-    user_data = UserRequest(**{k: v for k, v in raw_body.items()
-                               if k not in (ENTERPRISE_URN_V1, ENTERPRISE_URN_V2, "schemas")})
+    user_data = UserRequestV1(**raw_body)
     if storage.get_user_by_username(user_data.userName):
         return scim_error_v1(409, f"User {user_data.userName} already exists")
-    user_dict = user_data.model_dump(exclude_none=True)
-    _merge_enterprise_extension(user_dict, raw_body)
+    user_dict = _dump_user_request(user_data, ENTERPRISE_URN_V1)
     user = storage.create_user(user_dict)
     base_url = str(request.base_url).rstrip("/")
     response.headers["Location"] = f"{base_url}/scim/v1/Users/{user['id']}"
@@ -381,10 +395,8 @@ async def create_user_v1(request: Request, response: Response):
 @app.put("/scim/v1/Users/{user_id}")
 async def update_user_v1(user_id: str, request: Request):
     raw_body = await request.json()
-    user_data = UserRequest(**{k: v for k, v in raw_body.items()
-                               if k not in (ENTERPRISE_URN_V1, ENTERPRISE_URN_V2, "schemas")})
-    user_dict = user_data.model_dump(exclude_none=True)
-    _merge_enterprise_extension(user_dict, raw_body)
+    user_data = UserRequestV1(**raw_body)
+    user_dict = _dump_user_request(user_data, ENTERPRISE_URN_V1)
     user = storage.update_user(user_id, user_dict)
     if not user:
         return scim_error_v1(404, f"User {user_id} not found")
@@ -399,10 +411,14 @@ async def patch_user_v1(user_id: str, request: Request):
     for disable-on-delete behavior.
     """
     raw_body = await request.json()
-    patch_data = UserPatchV1(**{k: v for k, v in raw_body.items()
-                                if k not in (ENTERPRISE_URN_V1, ENTERPRISE_URN_V2)})
-    patch_dict = patch_data.model_dump(exclude_none=True)
-    _merge_enterprise_extension(patch_dict, raw_body)
+    patch_data = UserPatchV1(**raw_body)
+    patch_dict = patch_data.model_dump(
+        exclude_none=True, exclude={"enterprise_extension", "schemas"},
+    )
+    if patch_data.enterprise_extension is not None:
+        patch_dict[ENTERPRISE_URN_V1] = patch_data.enterprise_extension.model_dump(
+            exclude_none=True,
+        )
     user = storage.patch_user(user_id, patch_dict)
     if not user:
         return scim_error_v1(404, f"User {user_id} not found")
@@ -517,12 +533,10 @@ async def get_user_v2(user_id: str, request: Request):
 @app.post("/scim/v2/Users", status_code=201)
 async def create_user_v2(request: Request, response: Response):
     raw_body = await request.json()
-    user_data = UserRequest(**{k: v for k, v in raw_body.items()
-                               if k not in (ENTERPRISE_URN_V1, ENTERPRISE_URN_V2, "schemas")})
+    user_data = UserRequestV2(**raw_body)
     if storage.get_user_by_username(user_data.userName):
         return scim_error_v2(409, f"User {user_data.userName} already exists")
-    user_dict = user_data.model_dump(exclude_none=True)
-    _merge_enterprise_extension(user_dict, raw_body)
+    user_dict = _dump_user_request(user_data, ENTERPRISE_URN_V2)
     user = storage.create_user(user_dict)
     base_url = str(request.base_url).rstrip("/")
     response.headers["Location"] = f"{base_url}/scim/v2/Users/{user['id']}"
@@ -532,10 +546,8 @@ async def create_user_v2(request: Request, response: Response):
 @app.put("/scim/v2/Users/{user_id}")
 async def update_user_v2(user_id: str, request: Request):
     raw_body = await request.json()
-    user_data = UserRequest(**{k: v for k, v in raw_body.items()
-                               if k not in (ENTERPRISE_URN_V1, ENTERPRISE_URN_V2, "schemas")})
-    user_dict = user_data.model_dump(exclude_none=True)
-    _merge_enterprise_extension(user_dict, raw_body)
+    user_data = UserRequestV2(**raw_body)
+    user_dict = _dump_user_request(user_data, ENTERPRISE_URN_V2)
     user = storage.update_user(user_id, user_dict)
     if not user:
         return scim_error_v2(404, f"User {user_id} not found")
@@ -550,8 +562,7 @@ async def patch_user_v2(user_id: str, request: Request):
     Example: {"Operations": [{"op": "replace", "path": "active", "value": false}]}
     """
     raw_body = await request.json()
-    patch_data = UserPatchV2(**{k: v for k, v in raw_body.items()
-                                if k not in (ENTERPRISE_URN_V1, ENTERPRISE_URN_V2)})
+    patch_data = UserPatchV2(**raw_body)
     if not patch_data.Operations:
         return scim_error_v2(400, "No operations provided")
 
@@ -565,6 +576,7 @@ async def patch_user_v2(user_id: str, request: Request):
         elif op.op.lower() == "remove" and op.path:
             patch_dict[op.path] = None
 
+    # Handle enterprise extension in Operations (e.g., replace on URN path)
     _merge_enterprise_extension(patch_dict, raw_body)
 
     if not patch_dict:
