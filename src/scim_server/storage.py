@@ -114,8 +114,11 @@ class Storage:
 
         # Patch all provided attributes except read-only ones
         for key, value in patch_data.items():
-            if key not in read_only and value is not None:
-                user[key] = value
+            if key not in read_only:
+                if value is None:
+                    user.pop(key, None)  # SCIM "remove" operation
+                else:
+                    user[key] = value
 
         user["meta"]["lastModified"] = now
         return user
