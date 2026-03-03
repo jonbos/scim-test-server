@@ -21,15 +21,25 @@ from scim_server.models import (
     UserRequestV1,
     UserRequestV2,
 )
+from scim_server.salesforce_routes import router as salesforce_router
 from scim_server.storage import storage
 
-security = HTTPBasic()
+security = HTTPBasic(auto_error=False)
 
 
-def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
+def verify_credentials(
+    request: Request,
+    credentials: HTTPBasicCredentials | None = Depends(security),
+):
+    # Salesforce /services/* endpoints handle their own auth (Bearer token).
+    # Skip Basic Auth for those paths so the OAuth token endpoint is accessible
+    # and Bearer-authenticated data endpoints don't collide with Basic Auth.
+    if request.url.path.startswith("/services/"):
+        return
+
     expected_username = os.environ.get("BASIC_AUTH_USERNAME")
     expected_password = os.environ.get("BASIC_AUTH_PASSWORD")
-    if expected_username is None or expected_password is None:
+    if credentials is None or expected_username is None or expected_password is None:
         raise HTTPException(
             status_code=401,
             detail="Server authentication not configured",
@@ -53,9 +63,14 @@ def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
 
 app = FastAPI(
     title="SCIM Server",
-    description="SCIM 1.1 and 2.0 compliant server",
+    description="SCIM 1.1 and 2.0 compliant server with Salesforce-style REST API",
     dependencies=[Depends(verify_credentials)],
 )
+
+# Salesforce routes — OAuth endpoint is unauthenticated (no Basic Auth),
+# data endpoints use Bearer token validation internally.
+# Admin endpoints (/admin/salesforce/*) are protected by the app-level Basic Auth.
+app.include_router(salesforce_router)
 
 SCIM_V1_SCHEMA_USER = "urn:scim:schemas:core:1.0"
 SCIM_V1_SCHEMA_GROUP = "urn:scim:schemas:core:1.0"

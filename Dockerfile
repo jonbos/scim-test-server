@@ -1,5 +1,7 @@
 FROM python:3.12-slim
 
+LABEL org.opencontainers.image.authors="bos.jon@gmail.com"
+
 WORKDIR /app
 
 # Copy source and project metadata
