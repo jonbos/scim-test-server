@@ -291,9 +291,8 @@ async def next_page(page_id: str, request: Request):
 
 @router.delete("/admin/salesforce/clear")
 async def clear_salesforce():
-    """Clear all Salesforce data and tokens."""
+    """Clear all Salesforce data (tokens are preserved)."""
     sf_storage.clear()
-    _active_tokens.clear()
     return {"message": "All Salesforce data cleared"}
 
 
