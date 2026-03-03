@@ -46,6 +46,16 @@ def _base_url(request: Request) -> str:
     return str(request.base_url).rstrip("/")
 
 
+def _apply_filter(records: list[dict], filter_expr: str) -> list[dict]:
+    """Parse a simple 'Field eq "value"' filter and return matching records."""
+    parts = filter_expr.split(" eq ", 1)
+    if len(parts) != 2:
+        return records
+    field = parts[0].strip()
+    value = parts[1].strip().strip('"')
+    return [r for r in records if r.get(field) == value]
+
+
 # ── OAuth Token Endpoint ──────────────────────────────────────────────────
 
 
@@ -162,7 +172,11 @@ async def delete_user(user_id: str):
     dependencies=[Depends(_verify_bearer)],
 )
 async def list_users(request: Request):
-    records = fs_storage.list_users()
+    filter_param = request.query_params.get("filter")
+    if filter_param:
+        records = _apply_filter(fs_storage.list_users(), filter_param)
+    else:
+        records = fs_storage.list_users()
     return fs_storage.paginate(records, _base_url(request))
 
 
@@ -231,7 +245,11 @@ async def delete_permission_set(ps_id: str):
     dependencies=[Depends(_verify_bearer)],
 )
 async def list_permission_sets(request: Request):
-    records = fs_storage.list_permission_sets()
+    filter_param = request.query_params.get("filter")
+    if filter_param:
+        records = _apply_filter(fs_storage.list_permission_sets(), filter_param)
+    else:
+        records = fs_storage.list_permission_sets()
     return fs_storage.paginate(records, _base_url(request))
 
 
@@ -304,3 +322,9 @@ async def failsource_status():
         "permission_sets": len(fs_storage.permission_sets),
         "assignments": len(fs_storage.assignments),
     }
+
+
+@router.get("/admin/failsource/assignments")
+async def list_assignments():
+    """List all PermissionSetAssignments (for test introspection)."""
+    return {"assignments": fs_storage.list_assignments()}
