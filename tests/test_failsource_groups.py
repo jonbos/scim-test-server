@@ -1,26 +1,26 @@
-"""Tests for Salesforce-style PermissionSet and PermissionSetAssignment endpoints."""
+"""Tests for FailSource-style PermissionSet and PermissionSetAssignment endpoints."""
 
 import pytest
 from httpx import ASGITransport, AsyncClient, BasicAuth
 
 from scim_server.main import app
-from scim_server.salesforce_routes import _active_tokens
-from scim_server.salesforce_storage import sf_storage
+from scim_server.failsource_routes import _active_tokens
+from scim_server.failsource_storage import fs_storage
 
 TEST_USERNAME = "testadmin"
 TEST_PASSWORD = "testpass"
 
 
 @pytest.fixture(autouse=True)
-def reset_sf_state(monkeypatch):
+def reset_fs_state(monkeypatch):
     monkeypatch.setenv("BASIC_AUTH_USERNAME", TEST_USERNAME)
     monkeypatch.setenv("BASIC_AUTH_PASSWORD", TEST_PASSWORD)
-    monkeypatch.setenv("SF_CLIENT_ID", "test-id")
-    monkeypatch.setenv("SF_CLIENT_SECRET", "test-secret")
-    sf_storage.clear()
+    monkeypatch.setenv("FS_CLIENT_ID", "test-id")
+    monkeypatch.setenv("FS_CLIENT_SECRET", "test-secret")
+    fs_storage.clear()
     _active_tokens.clear()
     yield
-    sf_storage.clear()
+    fs_storage.clear()
     _active_tokens.clear()
 
 
@@ -261,7 +261,7 @@ class TestPermissionSetAssignment:
             auth=BasicAuth(TEST_USERNAME, TEST_PASSWORD),
         )
         async with authed_client:
-            status = await authed_client.get("/admin/salesforce/status")
+            status = await authed_client.get("/admin/failsource/status")
             assert status.json()["assignments"] == 1
 
         # Delete user
@@ -276,5 +276,5 @@ class TestPermissionSetAssignment:
             base_url="http://test",
             auth=BasicAuth(TEST_USERNAME, TEST_PASSWORD),
         ) as authed:
-            status = await authed.get("/admin/salesforce/status")
+            status = await authed.get("/admin/failsource/status")
             assert status.json()["assignments"] == 0

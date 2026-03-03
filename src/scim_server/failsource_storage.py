@@ -1,4 +1,4 @@
-"""In-memory storage for Salesforce-style REST API resources."""
+"""In-memory storage for FailSource-style REST API resources."""
 
 import os
 import uuid
@@ -10,7 +10,7 @@ DEFAULT_PAGE_SIZE = 200
 
 def _page_size() -> int:
     try:
-        return int(os.environ.get("SF_PAGE_SIZE", DEFAULT_PAGE_SIZE))
+        return int(os.environ.get("FS_PAGE_SIZE", DEFAULT_PAGE_SIZE))
     except (TypeError, ValueError):
         return DEFAULT_PAGE_SIZE
 
@@ -23,7 +23,7 @@ def _new_id() -> str:
     return str(uuid.uuid4())
 
 
-class SalesforceStorage:
+class FailSourceStorage:
     """In-memory storage for Users, PermissionSets, and PermissionSetAssignments."""
 
     def __init__(self):
@@ -188,7 +188,7 @@ class SalesforceStorage:
     def paginate(
         self, records: list[dict[str, Any]], base_url: str,
     ) -> dict[str, Any]:
-        """Return a Salesforce-style paginated response.
+        """Return a FailSource-style paginated response.
 
         If records exceed page size, stores the remainder in _page_cache
         and returns a nextRecordsUrl.
@@ -219,4 +219,4 @@ class SalesforceStorage:
         return self.paginate(remaining, base_url)
 
 
-sf_storage = SalesforceStorage()
+fs_storage = FailSourceStorage()

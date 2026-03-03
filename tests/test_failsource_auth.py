@@ -1,26 +1,26 @@
-"""Tests for Salesforce OAuth token endpoint."""
+"""Tests for FailSource OAuth token endpoint."""
 
 import pytest
 from httpx import ASGITransport, AsyncClient, BasicAuth
 
 from scim_server.main import app
-from scim_server.salesforce_routes import _active_tokens
-from scim_server.salesforce_storage import sf_storage
+from scim_server.failsource_routes import _active_tokens
+from scim_server.failsource_storage import fs_storage
 
 TEST_USERNAME = "testadmin"
 TEST_PASSWORD = "testpass"
 
 
 @pytest.fixture(autouse=True)
-def reset_sf_state(monkeypatch):
+def reset_fs_state(monkeypatch):
     monkeypatch.setenv("BASIC_AUTH_USERNAME", TEST_USERNAME)
     monkeypatch.setenv("BASIC_AUTH_PASSWORD", TEST_PASSWORD)
-    monkeypatch.setenv("SF_CLIENT_ID", "test-id")
-    monkeypatch.setenv("SF_CLIENT_SECRET", "test-secret")
-    sf_storage.clear()
+    monkeypatch.setenv("FS_CLIENT_ID", "test-id")
+    monkeypatch.setenv("FS_CLIENT_SECRET", "test-secret")
+    fs_storage.clear()
     _active_tokens.clear()
     yield
-    sf_storage.clear()
+    fs_storage.clear()
     _active_tokens.clear()
 
 
@@ -141,8 +141,8 @@ class TestBearerAuth:
 class TestAdminEndpoints:
 
     @pytest.mark.asyncio
-    async def test_salesforce_status(self, authed_client):
-        response = await authed_client.get("/admin/salesforce/status")
+    async def test_failsource_status(self, authed_client):
+        response = await authed_client.get("/admin/failsource/status")
         assert response.status_code == 200
         data = response.json()
         assert data["users"] == 0
@@ -150,7 +150,7 @@ class TestAdminEndpoints:
         assert data["assignments"] == 0
 
     @pytest.mark.asyncio
-    async def test_salesforce_clear(self, authed_client, client):
+    async def test_failsource_clear(self, authed_client, client):
         # Create some data first
         token_resp = await client.post(
             "/services/oauth2/token",
@@ -168,13 +168,13 @@ class TestAdminEndpoints:
         )
 
         # Verify data exists
-        status = await authed_client.get("/admin/salesforce/status")
+        status = await authed_client.get("/admin/failsource/status")
         assert status.json()["users"] == 1
 
         # Clear
-        clear_resp = await authed_client.delete("/admin/salesforce/clear")
+        clear_resp = await authed_client.delete("/admin/failsource/clear")
         assert clear_resp.status_code == 200
 
         # Verify cleared
-        status = await authed_client.get("/admin/salesforce/status")
+        status = await authed_client.get("/admin/failsource/status")
         assert status.json()["users"] == 0

@@ -1,26 +1,26 @@
-"""Tests for Salesforce-style User endpoints."""
+"""Tests for FailSource-style User endpoints."""
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from scim_server.main import app
-from scim_server.salesforce_routes import _active_tokens
-from scim_server.salesforce_storage import sf_storage
+from scim_server.failsource_routes import _active_tokens
+from scim_server.failsource_storage import fs_storage
 
 TEST_USERNAME = "testadmin"
 TEST_PASSWORD = "testpass"
 
 
 @pytest.fixture(autouse=True)
-def reset_sf_state(monkeypatch):
+def reset_fs_state(monkeypatch):
     monkeypatch.setenv("BASIC_AUTH_USERNAME", TEST_USERNAME)
     monkeypatch.setenv("BASIC_AUTH_PASSWORD", TEST_PASSWORD)
-    monkeypatch.setenv("SF_CLIENT_ID", "test-id")
-    monkeypatch.setenv("SF_CLIENT_SECRET", "test-secret")
-    sf_storage.clear()
+    monkeypatch.setenv("FS_CLIENT_ID", "test-id")
+    monkeypatch.setenv("FS_CLIENT_SECRET", "test-secret")
+    fs_storage.clear()
     _active_tokens.clear()
     yield
-    sf_storage.clear()
+    fs_storage.clear()
     _active_tokens.clear()
 
 
@@ -200,7 +200,7 @@ class TestUserPagination:
 
     @pytest.mark.asyncio
     async def test_pagination(self, client, auth_headers, monkeypatch):
-        monkeypatch.setenv("SF_PAGE_SIZE", "2")
+        monkeypatch.setenv("FS_PAGE_SIZE", "2")
 
         # Create 5 users
         for i in range(5):

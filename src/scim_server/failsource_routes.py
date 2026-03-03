@@ -1,4 +1,4 @@
-"""Salesforce-style REST API routes for the mock server."""
+"""FailSource-style REST API routes for the mock server."""
 
 import os
 import secrets
@@ -8,7 +8,7 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBasic
 
-from scim_server.salesforce_storage import sf_storage
+from scim_server.failsource_storage import fs_storage
 
 # ── Token management ──────────────────────────────────────────────────────
 
@@ -19,16 +19,16 @@ router = APIRouter()
 security = HTTPBasic()
 
 
-def _sf_client_id() -> str:
-    return os.environ.get("SF_CLIENT_ID", "")
+def _fs_client_id() -> str:
+    return os.environ.get("FS_CLIENT_ID", "")
 
 
-def _sf_client_secret() -> str:
-    return os.environ.get("SF_CLIENT_SECRET", "")
+def _fs_client_secret() -> str:
+    return os.environ.get("FS_CLIENT_SECRET", "")
 
 
 def _verify_bearer(authorization: str = Header(None)):
-    """Validate Bearer token on Salesforce data endpoints."""
+    """Validate Bearer token on FailSource data endpoints."""
     if not authorization or not authorization.startswith("Bearer "):
         raise HTTPException(
             status_code=401,
@@ -66,8 +66,8 @@ async def oauth_token(request: Request):
             },
         )
 
-    expected_id = _sf_client_id()
-    expected_secret = _sf_client_secret()
+    expected_id = _fs_client_id()
+    expected_secret = _fs_client_secret()
 
     if not expected_id or not expected_secret:
         return JSONResponse(
@@ -107,7 +107,7 @@ async def oauth_token(request: Request):
 )
 async def create_user(request: Request):
     body = await request.json()
-    user = sf_storage.create_user(body)
+    user = fs_storage.create_user(body)
     return {"Id": user["Id"], "success": True, "errors": []}
 
 
@@ -116,7 +116,7 @@ async def create_user(request: Request):
     dependencies=[Depends(_verify_bearer)],
 )
 async def get_user(user_id: str):
-    user = sf_storage.get_user(user_id)
+    user = fs_storage.get_user(user_id)
     if not user:
         raise HTTPException(
             status_code=404,
@@ -135,7 +135,7 @@ async def get_user(user_id: str):
 )
 async def update_user(user_id: str, request: Request):
     body = await request.json()
-    if not sf_storage.update_user(user_id, body):
+    if not fs_storage.update_user(user_id, body):
         raise HTTPException(
             status_code=404,
             detail=[{"message": f"entity is deleted: {user_id}", "errorCode": "ENTITY_IS_DELETED"}],
@@ -149,7 +149,7 @@ async def update_user(user_id: str, request: Request):
     dependencies=[Depends(_verify_bearer)],
 )
 async def delete_user(user_id: str):
-    if not sf_storage.delete_user(user_id):
+    if not fs_storage.delete_user(user_id):
         raise HTTPException(
             status_code=404,
             detail=[{"message": f"entity is deleted: {user_id}", "errorCode": "ENTITY_IS_DELETED"}],
@@ -162,8 +162,8 @@ async def delete_user(user_id: str):
     dependencies=[Depends(_verify_bearer)],
 )
 async def list_users(request: Request):
-    records = sf_storage.list_users()
-    return sf_storage.paginate(records, _base_url(request))
+    records = fs_storage.list_users()
+    return fs_storage.paginate(records, _base_url(request))
 
 
 # ── PermissionSet Endpoints ───────────────────────────────────────────────
@@ -176,7 +176,7 @@ async def list_users(request: Request):
 )
 async def create_permission_set(request: Request):
     body = await request.json()
-    pset = sf_storage.create_permission_set(body)
+    pset = fs_storage.create_permission_set(body)
     return {"Id": pset["Id"], "success": True, "errors": []}
 
 
@@ -185,7 +185,7 @@ async def create_permission_set(request: Request):
     dependencies=[Depends(_verify_bearer)],
 )
 async def get_permission_set(ps_id: str):
-    pset = sf_storage.get_permission_set(ps_id)
+    pset = fs_storage.get_permission_set(ps_id)
     if not pset:
         raise HTTPException(
             status_code=404,
@@ -204,7 +204,7 @@ async def get_permission_set(ps_id: str):
 )
 async def update_permission_set(ps_id: str, request: Request):
     body = await request.json()
-    if not sf_storage.update_permission_set(ps_id, body):
+    if not fs_storage.update_permission_set(ps_id, body):
         raise HTTPException(
             status_code=404,
             detail=[{"message": f"entity is deleted: {ps_id}", "errorCode": "ENTITY_IS_DELETED"}],
@@ -218,7 +218,7 @@ async def update_permission_set(ps_id: str, request: Request):
     dependencies=[Depends(_verify_bearer)],
 )
 async def delete_permission_set(ps_id: str):
-    if not sf_storage.delete_permission_set(ps_id):
+    if not fs_storage.delete_permission_set(ps_id):
         raise HTTPException(
             status_code=404,
             detail=[{"message": f"entity is deleted: {ps_id}", "errorCode": "ENTITY_IS_DELETED"}],
@@ -231,8 +231,8 @@ async def delete_permission_set(ps_id: str):
     dependencies=[Depends(_verify_bearer)],
 )
 async def list_permission_sets(request: Request):
-    records = sf_storage.list_permission_sets()
-    return sf_storage.paginate(records, _base_url(request))
+    records = fs_storage.list_permission_sets()
+    return fs_storage.paginate(records, _base_url(request))
 
 
 # ── PermissionSetAssignment Endpoints ─────────────────────────────────────
@@ -245,7 +245,7 @@ async def list_permission_sets(request: Request):
 )
 async def create_assignment(request: Request):
     body = await request.json()
-    assignment = sf_storage.create_assignment(body)
+    assignment = fs_storage.create_assignment(body)
     return {"Id": assignment["Id"], "success": True, "errors": []}
 
 
@@ -255,7 +255,7 @@ async def create_assignment(request: Request):
     dependencies=[Depends(_verify_bearer)],
 )
 async def delete_assignment(assignment_id: str):
-    if not sf_storage.delete_assignment(assignment_id):
+    if not fs_storage.delete_assignment(assignment_id):
         raise HTTPException(
             status_code=404,
             detail=[{
@@ -274,7 +274,7 @@ async def delete_assignment(assignment_id: str):
     dependencies=[Depends(_verify_bearer)],
 )
 async def next_page(page_id: str, request: Request):
-    result = sf_storage.get_next_page(page_id, _base_url(request))
+    result = fs_storage.get_next_page(page_id, _base_url(request))
     if result is None:
         raise HTTPException(
             status_code=404,
@@ -289,18 +289,18 @@ async def next_page(page_id: str, request: Request):
 # ── Admin Endpoints (Basic Auth protected via main app) ──────────────────
 
 
-@router.delete("/admin/salesforce/clear")
-async def clear_salesforce():
-    """Clear all Salesforce data (tokens are preserved)."""
-    sf_storage.clear()
-    return {"message": "All Salesforce data cleared"}
+@router.delete("/admin/failsource/clear")
+async def clear_failsource():
+    """Clear all FailSource data (tokens are preserved)."""
+    fs_storage.clear()
+    return {"message": "All FailSource data cleared"}
 
 
-@router.get("/admin/salesforce/status")
-async def salesforce_status():
-    """Get Salesforce data counts."""
+@router.get("/admin/failsource/status")
+async def failsource_status():
+    """Get FailSource data counts."""
     return {
-        "users": len(sf_storage.users),
-        "permission_sets": len(sf_storage.permission_sets),
-        "assignments": len(sf_storage.assignments),
+        "users": len(fs_storage.users),
+        "permission_sets": len(fs_storage.permission_sets),
+        "assignments": len(fs_storage.assignments),
     }
