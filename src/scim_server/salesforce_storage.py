@@ -5,7 +5,6 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any
 
-
 DEFAULT_PAGE_SIZE = 200
 
 

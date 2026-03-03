@@ -6,7 +6,7 @@ import uuid
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from fastapi.security import HTTPBasic
 
 from scim_server.salesforce_storage import sf_storage
 
@@ -60,7 +60,10 @@ async def oauth_token(request: Request):
     if grant_type != "client_credentials":
         return JSONResponse(
             status_code=400,
-            content={"error": "unsupported_grant_type", "error_description": "Only client_credentials is supported"},
+            content={
+                "error": "unsupported_grant_type",
+                "error_description": "Only client_credentials is supported",
+            },
         )
 
     expected_id = _sf_client_id()
@@ -69,7 +72,10 @@ async def oauth_token(request: Request):
     if not expected_id or not expected_secret:
         return JSONResponse(
             status_code=400,
-            content={"error": "invalid_client", "error_description": "OAuth not configured on server"},
+            content={
+                "error": "invalid_client",
+                "error_description": "OAuth not configured on server",
+            },
         )
 
     id_ok = secrets.compare_digest(str(client_id), expected_id)
@@ -114,7 +120,10 @@ async def get_user(user_id: str):
     if not user:
         raise HTTPException(
             status_code=404,
-            detail=[{"message": f"Provided external ID field does not exist or is not accessible: {user_id}", "errorCode": "NOT_FOUND"}],
+            detail=[{
+                "message": f"Not found: {user_id}",
+                "errorCode": "NOT_FOUND",
+            }],
         )
     return user
 
@@ -180,7 +189,10 @@ async def get_permission_set(ps_id: str):
     if not pset:
         raise HTTPException(
             status_code=404,
-            detail=[{"message": f"Provided external ID field does not exist or is not accessible: {ps_id}", "errorCode": "NOT_FOUND"}],
+            detail=[{
+                "message": f"Not found: {ps_id}",
+                "errorCode": "NOT_FOUND",
+            }],
         )
     return pset
 
@@ -246,7 +258,10 @@ async def delete_assignment(assignment_id: str):
     if not sf_storage.delete_assignment(assignment_id):
         raise HTTPException(
             status_code=404,
-            detail=[{"message": f"entity is deleted: {assignment_id}", "errorCode": "ENTITY_IS_DELETED"}],
+            detail=[{
+                "message": f"entity is deleted: {assignment_id}",
+                "errorCode": "ENTITY_IS_DELETED",
+            }],
         )
     return None
 
@@ -263,7 +278,10 @@ async def next_page(page_id: str, request: Request):
     if result is None:
         raise HTTPException(
             status_code=404,
-            detail=[{"message": f"query locator has expired: {page_id}", "errorCode": "INVALID_QUERY_LOCATOR"}],
+            detail=[{
+                "message": f"query locator has expired: {page_id}",
+                "errorCode": "INVALID_QUERY_LOCATOR",
+            }],
         )
     return result
 

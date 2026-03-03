@@ -1,7 +1,7 @@
 """Tests for Salesforce-style User endpoints."""
 
 import pytest
-from httpx import ASGITransport, AsyncClient, BasicAuth
+from httpx import ASGITransport, AsyncClient
 
 from scim_server.main import app
 from scim_server.salesforce_routes import _active_tokens
@@ -206,7 +206,11 @@ class TestUserPagination:
         for i in range(5):
             await client.post(
                 "/services/data/v62.0/sobjects/User",
-                json={"Username": f"user{i}@example.com", "FirstName": f"User{i}", "LastName": "Test"},
+                json={
+                    "Username": f"user{i}@example.com",
+                    "FirstName": f"User{i}",
+                    "LastName": "Test",
+                },
                 headers=auth_headers,
             )
 
