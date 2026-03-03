@@ -9,6 +9,7 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from scim_server.config import allows_patch_for_groups, allows_put_for_groups, get_config
+from scim_server.failsource_routes import router as failsource_router
 from scim_server.models import (
     ENTERPRISE_URN_V1,
     ENTERPRISE_URN_V2,
@@ -21,7 +22,6 @@ from scim_server.models import (
     UserRequestV1,
     UserRequestV2,
 )
-from scim_server.failsource_routes import router as failsource_router
 from scim_server.storage import storage
 
 security = HTTPBasic(auto_error=False)

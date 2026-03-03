@@ -3,9 +3,9 @@
 import pytest
 from httpx import ASGITransport, AsyncClient, BasicAuth
 
-from scim_server.main import app
 from scim_server.failsource_routes import _active_tokens
 from scim_server.failsource_storage import fs_storage
+from scim_server.main import app
 
 TEST_USERNAME = "testadmin"
 TEST_PASSWORD = "testpass"
