@@ -2,21 +2,23 @@
 
 import os
 import secrets
-import uuid
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import JSONResponse
-from fastapi.security import HTTPBasic
 
-from scim_server.failsource_storage import fs_storage
+from scim_server.failsource_storage import FS_API_VERSION, _new_id, fs_storage
 
 # ── Token management ──────────────────────────────────────────────────────
 
 _active_tokens: set[str] = set()
 
-router = APIRouter()
+_DATA_PREFIX = f"/services/data/{FS_API_VERSION}/sobjects"
 
-security = HTTPBasic()
+# /services/* routes use Bearer token auth (no Basic Auth).
+service_router = APIRouter()
+
+# /admin/failsource/* routes are protected by app-level Basic Auth.
+admin_router = APIRouter()
 
 
 def _fs_client_id() -> str:
@@ -56,10 +58,15 @@ def _apply_filter(records: list[dict], filter_expr: str) -> list[dict]:
     return [r for r in records if r.get(field) == value]
 
 
+def clear_tokens() -> None:
+    """Clear all active Bearer tokens."""
+    _active_tokens.clear()
+
+
 # ── OAuth Token Endpoint ──────────────────────────────────────────────────
 
 
-@router.post("/services/oauth2/token")
+@service_router.post("/services/oauth2/token")
 async def oauth_token(request: Request):
     """Issue a Bearer token for client_credentials grant."""
     form = await request.form()
@@ -97,7 +104,7 @@ async def oauth_token(request: Request):
             content={"error": "invalid_client", "error_description": "Invalid client credentials"},
         )
 
-    token = str(uuid.uuid4())
+    token = _new_id()
     _active_tokens.add(token)
 
     return {
@@ -110,8 +117,8 @@ async def oauth_token(request: Request):
 # ── User Endpoints ────────────────────────────────────────────────────────
 
 
-@router.post(
-    "/services/data/v62.0/sobjects/User",
+@service_router.post(
+    f"{_DATA_PREFIX}/User",
     status_code=201,
     dependencies=[Depends(_verify_bearer)],
 )
@@ -121,8 +128,8 @@ async def create_user(request: Request):
     return {"Id": user["Id"], "success": True, "errors": []}
 
 
-@router.get(
-    "/services/data/v62.0/sobjects/User/{user_id}",
+@service_router.get(
+    f"{_DATA_PREFIX}/User/{{user_id}}",
     dependencies=[Depends(_verify_bearer)],
 )
 async def get_user(user_id: str):
@@ -138,8 +145,8 @@ async def get_user(user_id: str):
     return user
 
 
-@router.patch(
-    "/services/data/v62.0/sobjects/User/{user_id}",
+@service_router.patch(
+    f"{_DATA_PREFIX}/User/{{user_id}}",
     status_code=204,
     dependencies=[Depends(_verify_bearer)],
 )
@@ -148,13 +155,13 @@ async def update_user(user_id: str, request: Request):
     if not fs_storage.update_user(user_id, body):
         raise HTTPException(
             status_code=404,
-            detail=[{"message": f"entity is deleted: {user_id}", "errorCode": "ENTITY_IS_DELETED"}],
+            detail=[{"message": f"Not found: {user_id}", "errorCode": "NOT_FOUND"}],
         )
     return None
 
 
-@router.delete(
-    "/services/data/v62.0/sobjects/User/{user_id}",
+@service_router.delete(
+    f"{_DATA_PREFIX}/User/{{user_id}}",
     status_code=204,
     dependencies=[Depends(_verify_bearer)],
 )
@@ -162,13 +169,13 @@ async def delete_user(user_id: str):
     if not fs_storage.delete_user(user_id):
         raise HTTPException(
             status_code=404,
-            detail=[{"message": f"entity is deleted: {user_id}", "errorCode": "ENTITY_IS_DELETED"}],
+            detail=[{"message": f"Not found: {user_id}", "errorCode": "NOT_FOUND"}],
         )
     return None
 
 
-@router.get(
-    "/services/data/v62.0/sobjects/User",
+@service_router.get(
+    f"{_DATA_PREFIX}/User",
     dependencies=[Depends(_verify_bearer)],
 )
 async def list_users(request: Request):
@@ -183,8 +190,8 @@ async def list_users(request: Request):
 # ── PermissionSet Endpoints ───────────────────────────────────────────────
 
 
-@router.post(
-    "/services/data/v62.0/sobjects/PermissionSet",
+@service_router.post(
+    f"{_DATA_PREFIX}/PermissionSet",
     status_code=201,
     dependencies=[Depends(_verify_bearer)],
 )
@@ -194,8 +201,8 @@ async def create_permission_set(request: Request):
     return {"Id": pset["Id"], "success": True, "errors": []}
 
 
-@router.get(
-    "/services/data/v62.0/sobjects/PermissionSet/{ps_id}",
+@service_router.get(
+    f"{_DATA_PREFIX}/PermissionSet/{{ps_id}}",
     dependencies=[Depends(_verify_bearer)],
 )
 async def get_permission_set(ps_id: str):
@@ -211,8 +218,8 @@ async def get_permission_set(ps_id: str):
     return pset
 
 
-@router.patch(
-    "/services/data/v62.0/sobjects/PermissionSet/{ps_id}",
+@service_router.patch(
+    f"{_DATA_PREFIX}/PermissionSet/{{ps_id}}",
     status_code=204,
     dependencies=[Depends(_verify_bearer)],
 )
@@ -221,13 +228,13 @@ async def update_permission_set(ps_id: str, request: Request):
     if not fs_storage.update_permission_set(ps_id, body):
         raise HTTPException(
             status_code=404,
-            detail=[{"message": f"entity is deleted: {ps_id}", "errorCode": "ENTITY_IS_DELETED"}],
+            detail=[{"message": f"Not found: {ps_id}", "errorCode": "NOT_FOUND"}],
         )
     return None
 
 
-@router.delete(
-    "/services/data/v62.0/sobjects/PermissionSet/{ps_id}",
+@service_router.delete(
+    f"{_DATA_PREFIX}/PermissionSet/{{ps_id}}",
     status_code=204,
     dependencies=[Depends(_verify_bearer)],
 )
@@ -235,13 +242,13 @@ async def delete_permission_set(ps_id: str):
     if not fs_storage.delete_permission_set(ps_id):
         raise HTTPException(
             status_code=404,
-            detail=[{"message": f"entity is deleted: {ps_id}", "errorCode": "ENTITY_IS_DELETED"}],
+            detail=[{"message": f"Not found: {ps_id}", "errorCode": "NOT_FOUND"}],
         )
     return None
 
 
-@router.get(
-    "/services/data/v62.0/sobjects/PermissionSet",
+@service_router.get(
+    f"{_DATA_PREFIX}/PermissionSet",
     dependencies=[Depends(_verify_bearer)],
 )
 async def list_permission_sets(request: Request):
@@ -256,8 +263,8 @@ async def list_permission_sets(request: Request):
 # ── PermissionSetAssignment Endpoints ─────────────────────────────────────
 
 
-@router.post(
-    "/services/data/v62.0/sobjects/PermissionSetAssignment",
+@service_router.post(
+    f"{_DATA_PREFIX}/PermissionSetAssignment",
     status_code=201,
     dependencies=[Depends(_verify_bearer)],
 )
@@ -267,8 +274,8 @@ async def create_assignment(request: Request):
     return {"Id": assignment["Id"], "success": True, "errors": []}
 
 
-@router.delete(
-    "/services/data/v62.0/sobjects/PermissionSetAssignment/{assignment_id}",
+@service_router.delete(
+    f"{_DATA_PREFIX}/PermissionSetAssignment/{{assignment_id}}",
     status_code=204,
     dependencies=[Depends(_verify_bearer)],
 )
@@ -277,8 +284,8 @@ async def delete_assignment(assignment_id: str):
         raise HTTPException(
             status_code=404,
             detail=[{
-                "message": f"entity is deleted: {assignment_id}",
-                "errorCode": "ENTITY_IS_DELETED",
+                "message": f"Not found: {assignment_id}",
+                "errorCode": "NOT_FOUND",
             }],
         )
     return None
@@ -287,8 +294,8 @@ async def delete_assignment(assignment_id: str):
 # ── Pagination Endpoint ──────────────────────────────────────────────────
 
 
-@router.get(
-    "/services/data/v62.0/query/{page_id}",
+@service_router.get(
+    f"/services/data/{FS_API_VERSION}/query/{{page_id}}",
     dependencies=[Depends(_verify_bearer)],
 )
 async def next_page(page_id: str, request: Request):
@@ -307,14 +314,15 @@ async def next_page(page_id: str, request: Request):
 # ── Admin Endpoints (Basic Auth protected via main app) ──────────────────
 
 
-@router.delete("/admin/failsource/clear")
+@admin_router.delete("/admin/failsource/clear")
 async def clear_failsource():
-    """Clear all FailSource data (tokens are preserved)."""
+    """Clear all FailSource data and tokens."""
     fs_storage.clear()
+    clear_tokens()
     return {"message": "All FailSource data cleared"}
 
 
-@router.get("/admin/failsource/status")
+@admin_router.get("/admin/failsource/status")
 async def failsource_status():
     """Get FailSource data counts."""
     return {
@@ -324,7 +332,7 @@ async def failsource_status():
     }
 
 
-@router.get("/admin/failsource/assignments")
+@admin_router.get("/admin/failsource/assignments")
 async def list_assignments():
     """List all PermissionSetAssignments (for test introspection)."""
     return {"assignments": fs_storage.list_assignments()}

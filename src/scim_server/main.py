@@ -9,7 +9,8 @@ from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
 from scim_server.config import allows_patch_for_groups, allows_put_for_groups, get_config
-from scim_server.failsource_routes import router as failsource_router
+from scim_server.failsource_routes import admin_router as failsource_admin_router
+from scim_server.failsource_routes import service_router as failsource_service_router
 from scim_server.models import (
     ENTERPRISE_URN_V1,
     ENTERPRISE_URN_V2,
@@ -24,22 +25,13 @@ from scim_server.models import (
 )
 from scim_server.storage import storage
 
-security = HTTPBasic(auto_error=False)
+security = HTTPBasic()
 
 
-def verify_credentials(
-    request: Request,
-    credentials: HTTPBasicCredentials | None = Depends(security),
-):
-    # FailSource /services/* endpoints handle their own auth (Bearer token).
-    # Skip Basic Auth for those paths so the OAuth token endpoint is accessible
-    # and Bearer-authenticated data endpoints don't collide with Basic Auth.
-    if request.url.path.startswith("/services/"):
-        return
-
+def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
     expected_username = os.environ.get("BASIC_AUTH_USERNAME")
     expected_password = os.environ.get("BASIC_AUTH_PASSWORD")
-    if credentials is None or expected_username is None or expected_password is None:
+    if expected_username is None or expected_password is None:
         raise HTTPException(
             status_code=401,
             detail="Server authentication not configured",
@@ -67,10 +59,11 @@ app = FastAPI(
     dependencies=[Depends(verify_credentials)],
 )
 
-# FailSource routes — OAuth endpoint is unauthenticated (no Basic Auth),
-# data endpoints use Bearer token validation internally.
+# FailSource /services/* routes handle their own auth (Bearer token).
+# They opt out of app-level Basic Auth via dependencies=[].
 # Admin endpoints (/admin/failsource/*) are protected by the app-level Basic Auth.
-app.include_router(failsource_router)
+app.include_router(failsource_service_router, dependencies=[])
+app.include_router(failsource_admin_router)
 
 SCIM_V1_SCHEMA_USER = "urn:scim:schemas:core:1.0"
 SCIM_V1_SCHEMA_GROUP = "urn:scim:schemas:core:1.0"

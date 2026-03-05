@@ -6,6 +6,9 @@ from datetime import datetime, timezone
 from typing import Any
 
 DEFAULT_PAGE_SIZE = 200
+FS_API_VERSION = "v62.0"
+
+_READ_ONLY_FIELDS = frozenset({"Id", "CreatedDate", "attributes"})
 
 
 def _page_size() -> int:
@@ -21,6 +24,14 @@ def _now_iso() -> str:
 
 def _new_id() -> str:
     return str(uuid.uuid4())
+
+
+def _apply_update(record: dict[str, Any], data: dict[str, Any]) -> None:
+    """Apply mutable fields from data onto record, skipping read-only fields."""
+    for key, value in data.items():
+        if key not in _READ_ONLY_FIELDS:
+            record[key] = value
+    record["LastModifiedDate"] = _now_iso()
 
 
 class FailSourceStorage:
@@ -55,7 +66,10 @@ class FailSourceStorage:
             "Department": data.get("Department", ""),
             "CreatedDate": now,
             "LastModifiedDate": now,
-            "attributes": {"type": "User", "url": f"/services/data/v62.0/sobjects/User/{uid}"},
+            "attributes": {
+                "type": "User",
+                "url": f"/services/data/{FS_API_VERSION}/sobjects/User/{uid}",
+            },
         }
         self.users[uid] = user
         return user
@@ -66,32 +80,19 @@ class FailSourceStorage:
     def update_user(self, user_id: str, data: dict[str, Any]) -> bool:
         if user_id not in self.users:
             return False
-        user = self.users[user_id]
-        read_only = {"Id", "CreatedDate", "attributes"}
-        for key, value in data.items():
-            if key not in read_only:
-                user[key] = value
-        user["LastModifiedDate"] = _now_iso()
+        _apply_update(self.users[user_id], data)
         return True
 
     def delete_user(self, user_id: str) -> bool:
         if user_id not in self.users:
             return False
         del self.users[user_id]
-        # Also remove any assignments for this user
-        to_remove = [
-            aid for aid, a in self.assignments.items()
-            if a["AssigneeId"] == user_id
-        ]
-        for aid in to_remove:
-            del self.assignments[aid]
+        for a in self.get_assignments_for_user(user_id):
+            del self.assignments[a["Id"]]
         return True
 
     def list_users(self) -> list[dict[str, Any]]:
         return list(self.users.values())
-
-    def find_users(self, field: str, value: str) -> list[dict[str, Any]]:
-        return [u for u in self.users.values() if u.get(field) == value]
 
     # ── PermissionSets ────────────────────────────────────────────────────
 
@@ -107,7 +108,7 @@ class FailSourceStorage:
             "LastModifiedDate": now,
             "attributes": {
                 "type": "PermissionSet",
-                "url": f"/services/data/v62.0/sobjects/PermissionSet/{pid}",
+                "url": f"/services/data/{FS_API_VERSION}/sobjects/PermissionSet/{pid}",
             },
         }
         self.permission_sets[pid] = pset
@@ -119,32 +120,19 @@ class FailSourceStorage:
     def update_permission_set(self, ps_id: str, data: dict[str, Any]) -> bool:
         if ps_id not in self.permission_sets:
             return False
-        pset = self.permission_sets[ps_id]
-        read_only = {"Id", "CreatedDate", "attributes"}
-        for key, value in data.items():
-            if key not in read_only:
-                pset[key] = value
-        pset["LastModifiedDate"] = _now_iso()
+        _apply_update(self.permission_sets[ps_id], data)
         return True
 
     def delete_permission_set(self, ps_id: str) -> bool:
         if ps_id not in self.permission_sets:
             return False
         del self.permission_sets[ps_id]
-        # Also remove assignments for this permission set
-        to_remove = [
-            aid for aid, a in self.assignments.items()
-            if a["PermissionSetId"] == ps_id
-        ]
-        for aid in to_remove:
-            del self.assignments[aid]
+        for a in self.get_assignments_for_permission_set(ps_id):
+            del self.assignments[a["Id"]]
         return True
 
     def list_permission_sets(self) -> list[dict[str, Any]]:
         return list(self.permission_sets.values())
-
-    def find_permission_sets(self, field: str, value: str) -> list[dict[str, Any]]:
-        return [p for p in self.permission_sets.values() if p.get(field) == value]
 
     # ── PermissionSetAssignments ──────────────────────────────────────────
 
@@ -159,7 +147,7 @@ class FailSourceStorage:
             "LastModifiedDate": now,
             "attributes": {
                 "type": "PermissionSetAssignment",
-                "url": f"/services/data/v62.0/sobjects/PermissionSetAssignment/{aid}",
+                "url": f"/services/data/{FS_API_VERSION}/sobjects/PermissionSetAssignment/{aid}",
             },
         }
         self.assignments[aid] = assignment
@@ -207,7 +195,7 @@ class FailSourceStorage:
         if remaining:
             page_id = _new_id()
             self._page_cache[page_id] = remaining
-            result["nextRecordsUrl"] = f"{base_url}/services/data/v62.0/query/{page_id}"
+            result["nextRecordsUrl"] = f"{base_url}/services/data/{FS_API_VERSION}/query/{page_id}"
 
         return result
 
