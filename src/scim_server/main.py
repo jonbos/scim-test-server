@@ -4,7 +4,7 @@ import os
 import secrets
 from typing import Any
 
-from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import JSONResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 
@@ -56,14 +56,14 @@ def verify_credentials(credentials: HTTPBasicCredentials = Depends(security)):
 app = FastAPI(
     title="SCIM Server",
     description="SCIM 1.1 and 2.0 compliant server with FailSource-style REST API",
-    dependencies=[Depends(verify_credentials)],
 )
 
 # FailSource /services/* routes handle their own auth (Bearer token).
-# They opt out of app-level Basic Auth via dependencies=[].
-# Admin endpoints (/admin/failsource/*) are protected by the app-level Basic Auth.
-app.include_router(failsource_service_router, dependencies=[])
-app.include_router(failsource_admin_router)
+app.include_router(failsource_service_router)
+
+# All SCIM and admin routes require Basic Auth.
+r = APIRouter(dependencies=[Depends(verify_credentials)])
+app.include_router(failsource_admin_router, dependencies=[Depends(verify_credentials)])
 
 SCIM_V1_SCHEMA_USER = "urn:scim:schemas:core:1.0"
 SCIM_V1_SCHEMA_GROUP = "urn:scim:schemas:core:1.0"
@@ -252,7 +252,7 @@ def _normalize_enterprise_manager(ext: dict[str, Any], version: int) -> dict[str
 # ============================================================================
 
 
-@app.post("/admin/seed")
+@r.post("/admin/seed")
 async def seed_data(data: SeedData):
     """Seed the server with initial users and groups."""
     storage.clear()
@@ -291,7 +291,7 @@ async def seed_data(data: SeedData):
     }
 
 
-@app.get("/admin/users/{user_id}/password")
+@r.get("/admin/users/{user_id}/password")
 async def get_user_password(user_id: str):
     """Debug endpoint: return the stored password for a user."""
     user = storage.get_user(user_id)
@@ -300,14 +300,14 @@ async def get_user_password(user_id: str):
     return {"id": user_id, "userName": user["userName"], "password": user.get("password")}
 
 
-@app.delete("/admin/clear")
+@r.delete("/admin/clear")
 async def clear_data():
     """Clear all users and groups."""
     storage.clear()
     return {"message": "All data cleared"}
 
 
-@app.get("/admin/status")
+@r.get("/admin/status")
 async def status():
     """Get current server status including configuration."""
     cfg = get_config()
@@ -318,13 +318,13 @@ async def status():
     }
 
 
-@app.get("/admin/config")
+@r.get("/admin/config")
 async def get_configuration():
     """Get current configuration details."""
     return get_config().to_dict()
 
 
-@app.put("/admin/preset/{preset}")
+@r.put("/admin/preset/{preset}")
 async def set_preset(preset: str):
     """Change the active preset. Clears all overrides."""
     cfg = get_config()
@@ -335,7 +335,7 @@ async def set_preset(preset: str):
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.put("/admin/config/{setting}")
+@r.put("/admin/config/{setting}")
 async def set_config_override(setting: str, value: bool = Query(..., description="true or false")):
     """Set a configuration override. Overrides take precedence over preset defaults."""
     cfg = get_config()
@@ -346,7 +346,7 @@ async def set_config_override(setting: str, value: bool = Query(..., description
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@app.delete("/admin/config/{setting}")
+@r.delete("/admin/config/{setting}")
 async def clear_config_override(setting: str):
     """Clear a configuration override, reverting to preset default."""
     cfg = get_config()
@@ -355,7 +355,7 @@ async def clear_config_override(setting: str):
 
 
 # Legacy endpoint for backwards compatibility
-@app.put("/admin/mode/{mode}")
+@r.put("/admin/mode/{mode}")
 async def change_mode(mode: str):
     """[DEPRECATED] Use /admin/preset/{preset} instead. Changes preset."""
     cfg = get_config()
@@ -371,7 +371,7 @@ async def change_mode(mode: str):
 # ============================================================================
 
 
-@app.get("/scim/v1/Users")
+@r.get("/scim/v1/Users")
 async def list_users_v1(
     request: Request,
     startIndex: int = Query(1, ge=1),
@@ -388,7 +388,7 @@ async def list_users_v1(
     }
 
 
-@app.get("/scim/v1/Users/{user_id}")
+@r.get("/scim/v1/Users/{user_id}")
 async def get_user_v1(user_id: str, request: Request):
     user = storage.get_user(user_id)
     if not user:
@@ -396,7 +396,7 @@ async def get_user_v1(user_id: str, request: Request):
     return format_user_v1(user, request)
 
 
-@app.post("/scim/v1/Users", status_code=201)
+@r.post("/scim/v1/Users", status_code=201)
 async def create_user_v1(request: Request, response: Response):
     raw_body = await request.json()
     user_data = UserRequestV1(**raw_body)
@@ -409,7 +409,7 @@ async def create_user_v1(request: Request, response: Response):
     return format_user_v1(user, request)
 
 
-@app.put("/scim/v1/Users/{user_id}")
+@r.put("/scim/v1/Users/{user_id}")
 async def update_user_v1(user_id: str, request: Request):
     raw_body = await request.json()
     user_data = UserRequestV1(**raw_body)
@@ -420,7 +420,7 @@ async def update_user_v1(user_id: str, request: Request):
     return format_user_v1(user, request)
 
 
-@app.patch("/scim/v1/Users/{user_id}")
+@r.patch("/scim/v1/Users/{user_id}")
 async def patch_user_v1(user_id: str, request: Request):
     """SCIM 1.1 User PATCH - partial update.
 
@@ -442,7 +442,7 @@ async def patch_user_v1(user_id: str, request: Request):
     return format_user_v1(user, request)
 
 
-@app.delete("/scim/v1/Users/{user_id}", status_code=204)
+@r.delete("/scim/v1/Users/{user_id}", status_code=204)
 async def delete_user_v1(user_id: str):
     if not storage.delete_user(user_id):
         raise HTTPException(status_code=404, detail=f"User {user_id} not found")
@@ -454,7 +454,7 @@ async def delete_user_v1(user_id: str):
 # ============================================================================
 
 
-@app.get("/scim/v1/Groups")
+@r.get("/scim/v1/Groups")
 async def list_groups_v1(
     request: Request,
     startIndex: int = Query(1, ge=1),
@@ -471,7 +471,7 @@ async def list_groups_v1(
     }
 
 
-@app.get("/scim/v1/Groups/{group_id}")
+@r.get("/scim/v1/Groups/{group_id}")
 async def get_group_v1(group_id: str, request: Request):
     group = storage.get_group(group_id)
     if not group:
@@ -479,7 +479,7 @@ async def get_group_v1(group_id: str, request: Request):
     return format_group_v1(group, request)
 
 
-@app.post("/scim/v1/Groups", status_code=201)
+@r.post("/scim/v1/Groups", status_code=201)
 async def create_group_v1(group_data: GroupRequest, request: Request, response: Response):
     group = storage.create_group(group_data.model_dump(exclude_none=True))
     base_url = str(request.base_url).rstrip("/")
@@ -487,7 +487,7 @@ async def create_group_v1(group_data: GroupRequest, request: Request, response: 
     return format_group_v1(group, request)
 
 
-@app.put("/scim/v1/Groups/{group_id}")
+@r.put("/scim/v1/Groups/{group_id}")
 async def update_group_v1(group_id: str, group_data: GroupRequest, request: Request):
     if not allows_put_for_groups():
         return scim_error_v1(405, "Method Not Allowed. Use PATCH for group updates.")
@@ -497,7 +497,7 @@ async def update_group_v1(group_id: str, group_data: GroupRequest, request: Requ
     return format_group_v1(group, request)
 
 
-@app.patch("/scim/v1/Groups/{group_id}")
+@r.patch("/scim/v1/Groups/{group_id}")
 async def patch_group_v1(group_id: str, patch_data: GroupPatchV1, request: Request):
     if not allows_patch_for_groups():
         return scim_error_v1(405, "Method Not Allowed. Use PUT for group updates.")
@@ -510,7 +510,7 @@ async def patch_group_v1(group_id: str, patch_data: GroupPatchV1, request: Reque
     return format_group_v1(group, request)
 
 
-@app.delete("/scim/v1/Groups/{group_id}", status_code=204)
+@r.delete("/scim/v1/Groups/{group_id}", status_code=204)
 async def delete_group_v1(group_id: str):
     if not storage.delete_group(group_id):
         raise HTTPException(status_code=404, detail=f"Group {group_id} not found")
@@ -522,7 +522,7 @@ async def delete_group_v1(group_id: str):
 # ============================================================================
 
 
-@app.get("/scim/v2/Users")
+@r.get("/scim/v2/Users")
 async def list_users_v2(
     request: Request,
     startIndex: int = Query(1, ge=1),
@@ -539,7 +539,7 @@ async def list_users_v2(
     }
 
 
-@app.get("/scim/v2/Users/{user_id}")
+@r.get("/scim/v2/Users/{user_id}")
 async def get_user_v2(user_id: str, request: Request):
     user = storage.get_user(user_id)
     if not user:
@@ -547,7 +547,7 @@ async def get_user_v2(user_id: str, request: Request):
     return format_user_v2(user, request)
 
 
-@app.post("/scim/v2/Users", status_code=201)
+@r.post("/scim/v2/Users", status_code=201)
 async def create_user_v2(request: Request, response: Response):
     raw_body = await request.json()
     user_data = UserRequestV2(**raw_body)
@@ -560,7 +560,7 @@ async def create_user_v2(request: Request, response: Response):
     return format_user_v2(user, request)
 
 
-@app.put("/scim/v2/Users/{user_id}")
+@r.put("/scim/v2/Users/{user_id}")
 async def update_user_v2(user_id: str, request: Request):
     raw_body = await request.json()
     user_data = UserRequestV2(**raw_body)
@@ -571,7 +571,7 @@ async def update_user_v2(user_id: str, request: Request):
     return format_user_v2(user, request)
 
 
-@app.patch("/scim/v2/Users/{user_id}")
+@r.patch("/scim/v2/Users/{user_id}")
 async def patch_user_v2(user_id: str, request: Request):
     """SCIM 2.0 User PATCH using Operations array.
 
@@ -605,7 +605,7 @@ async def patch_user_v2(user_id: str, request: Request):
     return format_user_v2(user, request)
 
 
-@app.delete("/scim/v2/Users/{user_id}", status_code=204)
+@r.delete("/scim/v2/Users/{user_id}", status_code=204)
 async def delete_user_v2(user_id: str):
     if not storage.delete_user(user_id):
         raise HTTPException(status_code=404, detail=f"User {user_id} not found")
@@ -617,7 +617,7 @@ async def delete_user_v2(user_id: str):
 # ============================================================================
 
 
-@app.get("/scim/v2/Groups")
+@r.get("/scim/v2/Groups")
 async def list_groups_v2(
     request: Request,
     startIndex: int = Query(1, ge=1),
@@ -634,7 +634,7 @@ async def list_groups_v2(
     }
 
 
-@app.get("/scim/v2/Groups/{group_id}")
+@r.get("/scim/v2/Groups/{group_id}")
 async def get_group_v2(group_id: str, request: Request):
     group = storage.get_group(group_id)
     if not group:
@@ -642,7 +642,7 @@ async def get_group_v2(group_id: str, request: Request):
     return format_group_v2(group, request)
 
 
-@app.post("/scim/v2/Groups", status_code=201)
+@r.post("/scim/v2/Groups", status_code=201)
 async def create_group_v2(group_data: GroupRequest, request: Request, response: Response):
     group = storage.create_group(group_data.model_dump(exclude_none=True))
     base_url = str(request.base_url).rstrip("/")
@@ -650,7 +650,7 @@ async def create_group_v2(group_data: GroupRequest, request: Request, response: 
     return format_group_v2(group, request)
 
 
-@app.put("/scim/v2/Groups/{group_id}")
+@r.put("/scim/v2/Groups/{group_id}")
 async def update_group_v2(group_id: str, group_data: GroupRequest, request: Request):
     if not allows_put_for_groups():
         return scim_error_v2(405, "Method Not Allowed. Use PATCH for group updates.")
@@ -660,7 +660,7 @@ async def update_group_v2(group_id: str, group_data: GroupRequest, request: Requ
     return format_group_v2(group, request)
 
 
-@app.patch("/scim/v2/Groups/{group_id}")
+@r.patch("/scim/v2/Groups/{group_id}")
 async def patch_group_v2(group_id: str, patch_data: GroupPatchV2, request: Request):
     if not allows_patch_for_groups():
         return scim_error_v2(405, "Method Not Allowed. Use PUT for group updates.")
@@ -687,11 +687,14 @@ async def patch_group_v2(group_id: str, patch_data: GroupPatchV2, request: Reque
     return format_group_v2(group, request)
 
 
-@app.delete("/scim/v2/Groups/{group_id}", status_code=204)
+@r.delete("/scim/v2/Groups/{group_id}", status_code=204)
 async def delete_group_v2(group_id: str):
     if not storage.delete_group(group_id):
         raise HTTPException(status_code=404, detail=f"Group {group_id} not found")
     return None
+
+
+app.include_router(r)
 
 
 def main():
