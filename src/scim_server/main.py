@@ -291,6 +291,15 @@ async def seed_data(data: SeedData):
     }
 
 
+@app.get("/admin/users/{user_id}/password")
+async def get_user_password(user_id: str):
+    """Debug endpoint: return the stored password for a user."""
+    user = storage.get_user(user_id)
+    if not user:
+        raise HTTPException(status_code=404, detail=f"User {user_id} not found")
+    return {"id": user_id, "userName": user["userName"], "password": user.get("password")}
+
+
 @app.delete("/admin/clear")
 async def clear_data():
     """Clear all users and groups."""
